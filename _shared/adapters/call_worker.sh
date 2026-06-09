@@ -21,8 +21,57 @@ SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${MULTIAGENT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 BACKENDS="$ROOT/_shared/backends.json"
 
+
+# Windows agy.exe prints through a TTY drip renderer. If this dispatcher is
+# launched from WSL/Linux while targeting the Gemini/agy worker, agy can exit 0
+# with empty stdout because the MINGW/MSYS winpty branch below cannot activate.
+# Re-enter through Git-Bash when available so uname=MINGW* and winpty capture is
+# used. This keeps WSL sessions from producing false-success empty Gemini results.
+to_gitbash_path() {
+  local p="$1" drive rest
+  case "$p" in
+    /mnt/[a-zA-Z]/*)
+      drive="${p:5:1}"; rest="${p:7}"
+      printf '/%s/%s' "$drive" "$rest" ;;
+    *) return 1 ;;
+  esac
+}
+if [ "$ROLE" = "gemini" ] && [ "${MAT_GITBASH_REEXEC:-0}" != "1" ]; then
+  if [ "$(uname -s 2>/dev/null || true)" = "Linux" ] && grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    GIT_BASH=""
+    for cand in "/mnt/c/Program Files/Git/bin/bash.exe" "/mnt/c/Program Files/Git/usr/bin/bash.exe"; do
+      [ -x "$cand" ] && { GIT_BASH="$cand"; break; }
+    done
+    if [ -n "$GIT_BASH" ]; then
+      case "$BRIEF" in /*) BRIEF_ABS="$BRIEF";; *) BRIEF_ABS="$(pwd)/$BRIEF";; esac
+      if ROOT_GB="$(to_gitbash_path "$ROOT")" && BRIEF_GB="$(to_gitbash_path "$BRIEF_ABS")"; then
+        printf -v ROOT_Q '%q' "$ROOT_GB"
+        printf -v BRIEF_Q '%q' "$BRIEF_GB"
+        printf -v ROLE_Q '%q' "$ROLE"
+        printf -v NS_Q '%q' "${MULTIAGENT_ORCH:-}"
+        exec "$GIT_BASH" -lc "cd $ROOT_Q && export MAT_GITBASH_REEXEC=1 && export MULTIAGENT_ORCH=$NS_Q && bash _shared/adapters/call_worker.sh $ROLE_Q $BRIEF_Q"
+      fi
+    fi
+  fi
+fi
+
 command -v jq >/dev/null 2>&1 || die "jq 필요(JSON 파싱)" 5
 [ -f "$BACKENDS" ] || die "backends.json 없음: $BACKENDS" 5
+
+# backends schema v2(dual): 활성 오케스트레이터 네임스페이스 결정.
+# backends schema v1(single): top-level .workers 를 사용한다.
+HAS_ORCH="$(jq -r 'has("orchestrators")' "$BACKENDS")"
+NS="${MULTIAGENT_ORCH:-}"
+if [ "$HAS_ORCH" = "true" ]; then
+  # 우선순위: 환경변수 MULTIAGENT_ORCH > backends.json 의 .active.
+  # 각 오케스트레이터(claude/codex)는 자기 호출 시 MULTIAGENT_ORCH=<self> 를 export 한다.
+  [ -n "$NS" ] || NS="$(jq -r '.active // empty' "$BACKENDS")"
+  [ -n "$NS" ] || die "활성 오케스트레이터 미지정(MULTIAGENT_ORCH 또는 backends.json .active)" 2
+  jq -e --arg ns "$NS" '.orchestrators[$ns]' "$BACKENDS" >/dev/null 2>&1 \
+    || die "알 수 없는 오케스트레이터 네임스페이스: $NS" 2
+else
+  NS="$(jq -r '.flavor // "single"' "$BACKENDS")"
+fi
 
 # timeout: coreutils timeout/gtimeout 우선, 없으면 portable bash 폴백(둘 다 유한 보장)
 TIMEOUT_BIN=""
@@ -41,14 +90,19 @@ case "$BRIEF" in *..*) die "brief 경로에 '..' 금지" 6;; esac
 [ -f "$BRIEF" ] || die "brief 파일 없음: $BRIEF" 6
 BRIEF="$(cd "$(dirname -- "$BRIEF")" && pwd)/$(basename -- "$BRIEF")"
 
-rec="$(jq -c --arg r "$ROLE" '.workers[$r] // empty' "$BACKENDS")"
-[ -n "$rec" ] || die "role 미정의: $ROLE" 2
+if [ "$HAS_ORCH" = "true" ]; then
+  rec="$(jq -c --arg ns "$NS" --arg r "$ROLE" '.orchestrators[$ns].workers[$r] // empty' "$BACKENDS")"
+  [ -n "$rec" ] || die "role 미정의(orchestrator=$NS): $ROLE" 2
+else
+  rec="$(jq -c --arg r "$ROLE" '.workers[$r] // empty' "$BACKENDS")"
+  [ -n "$rec" ] || die "role 미정의(flavor=$NS): $ROLE" 2
+fi
 
 redact() { sed -E 's/[A-Za-z0-9_-]{32,}/[REDACTED]/g'; }
 
 # 단일 backend 실행 → envelope(JSON)을 stdout, exit code 반환
 run_backend() {
-  local spec="$1" ctype bmode tmo cwdp model wd out err errd rc start dur
+  local spec="$1" ctype bmode tmo cwdp model wd out err errd rc start dur agy_pty=0
   ctype="$(jq -r '.call_type' <<<"$spec")"
   model="$(jq -r '.model // "?"' <<<"$spec")"
   case "$ctype" in
@@ -74,12 +128,23 @@ run_backend() {
     cmd+=("$command_bin")
     args_json="$(jq -r '.cli.args_template[]' <<<"$spec")"   # jq 실패 시 set -e 트리거
     while IFS= read -r a; do
+      a="${a%$'\r'}"   # Windows jq.exe는 CRLF 출력 → 인자 끝 \r 제거(없으면 agy가 '--model\r' 등으로 거부)
       case "$a" in
         "@brief")         cmd+=("$BRIEF");;
         "@brief_content") cmd+=("$(cat -- "$BRIEF")");;
         *)                cmd+=("$a");;
       esac
     done <<<"$args_json"
+    # Windows(MSYS/Cygwin): agy --print는 TTY drip 렌더라 비-TTY stdout엔 0바이트.
+    # winpty로 의사 TTY를 부여해 캡처 가능하게 한다(있을 때만). 출력엔 ANSI/drip 섞임 → 사후 _deansi.py 정리.
+    if [ "$command_bin" = "agy" ]; then
+      case "$(uname -s 2>/dev/null)" in
+        MINGW*|MSYS*|CYGWIN*)
+          if command -v winpty >/dev/null 2>&1; then
+            cmd=("winpty" "-Xallow-non-tty" "${cmd[@]}"); agy_pty=1
+          fi ;;
+      esac
+    fi
     # codex 워커: 기본은 git 요구(안전망). git 없으면 명확히 실패. 옵트아웃 시에만 우회.
     if [ "$command_bin" = "codex" ]; then
       if [ "${MULTIAGENT_CODEX_SKIP_GIT:-0}" = "1" ]; then
@@ -117,11 +182,21 @@ run_backend() {
     export CI=1 DEBIAN_FRONTEND=noninteractive
     if [ "$bmode" = "stdin" ]; then
       run_limited "$tmo" -- "${cmd[@]}" <"$BRIEF"
+    elif [ "$agy_pty" = "1" ]; then
+      # winpty+agy --print는 stdin이 즉시 EOF면(/dev/null·닫힌 파이프) 출력 0바이트로
+      # 조기 종료한다. timeout 동안 열린(비-EOF) stdin을 공급해야 PTY가 유지되고
+      # agy가 응답을 낸다. agy는 timeout 전에 끝나며 sleep은 그 후 정리된다.
+      run_limited "$tmo" -- "${cmd[@]}" < <(sleep "$tmo")
     else
       run_limited "$tmo" -- "${cmd[@]}" </dev/null
     fi
   ) >"$out" 2>"$err" || rc=$?
   dur=$(( $(date +%s) - start ))
+
+  # agy(winpty) 출력 정리: ANSI 제거 + drip 줄당 최장 \r-세그먼트 채택(최종 상태 복원)
+  if [ "$agy_pty" = "1" ] && command -v python3 >/dev/null 2>&1; then
+    python3 "$SCRIPT_DIR/_deansi.py" <"$out" >"$out.clean" 2>/dev/null && mv -f "$out.clean" "$out"
+  fi
 
   local status="ok"
   [ "$rc" -ne 0 ] && status="error"

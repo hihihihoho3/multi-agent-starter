@@ -126,7 +126,7 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 | codex-main | codex | 현재 Codex 환경의 native sub-agent/worker. |
 | codex-critic | claude | `mcp__codex__codex` MCP, `sandbox: read-only`, 비평 모드. |
 | claude-critic | codex | 승인된 Claude CLI (`claude -p`). 비평 모드, 쓰기 없음. |
-| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 기본 `gemini-3.1-pro-high`, 폴백 api. 폐기 프록시 브리지 사용 금지. |
+| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 기본 `Gemini 3.5 Flash (High)`, 폴백 api. 폐기 프록시 브리지 사용 금지. |
 
 ## Worker 파일 쓰기 (공통)
 
@@ -139,7 +139,7 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 - **claude-main**: 별칭 `opus` (`.claude/agents/claude-main.md` frontmatter). 버전 핀하지 않음 — 환경의 최신 Opus로 해석.
 - **codex-main / codex-critic**: 사용자 `~/.codex/config.toml` 기본값 자동 적용. 버전 핀하지 않음.
 - **claude-critic**: 승인된 Claude 도구의 현재 기본/별칭 모델. 버전 핀하지 않음.
-- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 기본 `gemini-3.1-pro-high`, 빠른 경로 `gemini-3-flash`/`pro-low`, 폴백 api. agy 모델은 전역·계정단위라 per-call 핀 불가. 근거: `_shared/learnings.md` · `design-basis.md` D4.
+- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 기본 `Gemini 3.5 Flash (High)`, 빠른 경로 `gemini-3-flash`/`pro-low`, 폴백 api. agy Windows CLI는 `--model` UI 라벨로 per-call 지정한다. 근거: `_shared/learnings.md` · `design-basis.md` D4.
 
 ## Worker 추가 조건
 - 이미 있는 worker 결과로 해결 가능하면 추가 호출 금지.

@@ -26,7 +26,7 @@ def main() -> None:
         with tempfile.TemporaryDirectory() as d:
             tgt = Path(d) / f"sys-{f}"
             r = run([sys.executable, str(GEN / "init.py"),
-                     "--flavor", f, "--target", str(tgt), "--yes", "--no-validate"])
+                     "--flavor", f, "--target", str(tgt), "--yes", "--no-validate", "--skip-host-fixes"])
             if r.returncode != 0:
                 print(f"  FAIL [{f}] init exit {r.returncode}\n{r.stderr}")
                 fails += 1

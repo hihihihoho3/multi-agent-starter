@@ -22,6 +22,17 @@ Orchestrator (Antigravity session — agy/IDE, Gemini 3.1 Pro High — internal 
 
 **Important**: Antigravity Orchestrator's internal reasoning is not a worker. A separate `claude-main`, `codex-main`, or `codex-critic` call is a worker/model call and must pass the approval gate for the task. 워커 호출은 `_shared/backends.json` + `bash _shared/adapters/call_worker.sh <role> <brief-file>` 디스패처를 거친다.
 
+## Worker Invocation Path (required)
+
+| Worker | How to call |
+|--------|-------------|
+| claude-main | Via dispatcher — `bash _shared/adapters/call_worker.sh claude-main <brief.md>` |
+| codex-main | Via dispatcher — `bash _shared/adapters/call_worker.sh codex-main <brief.md>` |
+| codex-critic | Via dispatcher — `bash _shared/adapters/call_worker.sh codex-critic <brief.md>` |
+
+- **All workers here are CLI-based; never run `claude` or `codex` directly from a shell.** In a non-interactive environment they hang on a `winpty.cc` PTY assertion. The dispatcher applies `backends.json` settings (`cwd_policy: isolated_tmp`, `stdin: /dev/null`, `no_tty: true`) and envelope capture so the call succeeds.
+- The dispatcher returns a JSON envelope (`status` / `exit_code` / `stdout` / `stderr_sanitized` / `fallback_used`). A leftover winpty assertion in `stderr_sanitized` is harmless when `status: ok` and `exit_code: 0`.
+
 ## Task Lifecycle
 
 1. Create `tasks/<task-name>/task.md` (`status: pending`).

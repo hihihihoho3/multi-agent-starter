@@ -92,6 +92,7 @@ v1은 이 repo를 clone해 루트 파일을 그대로 썼다. v2에서는 **같�
 
 - **Python 3** — 생성기 실행에 필요(`python3`). Windows는 `python`·`py`일 수 있다. 없으면 생성 단계가 안 된다.
 - **jq** — 제미나이 워커(gemini/api 디스패처)의 JSON 파싱에 필요. 없으면 `call_worker: jq 필요`로 멈춘다. (macOS는 기본 미설치 — `brew install jq`)
+- **Windows Git Bash PATH 보정** — Windows에서 `bash`가 `C:\Windows\System32\bash.exe`(WSL launcher)로 먼저 잡히면 dispatcher가 설치된 `jq`를 못 찾을 수 있다. 생성기는 Git for Windows가 있으면 현재 프로세스 PATH를 보정하고, 사용자 PowerShell profile(`Documents\PowerShell\profile.ps1`)에는 `%ProgramFiles%`/`%ProgramFiles(x86)%`에서 Git Bash `bin` 경로를 시작 시마다 동적으로 찾아 우선 적용하는 idempotent 블록을 추가한다. 원치 않으면 `--skip-host-fixes`로 생략한다.
 - **agy (Antigravity CLI)** — 제미나이 워커 백엔드. 설치·로그인 후 PATH에 있어야 한다.
 - **codex CLI** — 코덱스 워커 백엔드. 정상 경로는 MCP 서버(`codex mcp-server`, `.mcp.json`)다.
 - **git** — 권장(필수 아님). (1) 클로드 워커의 작업 격리(worktree)에 쓰인다 — 없으면 격리 없이 동작(폴백). (2) 코덱스를 **CLI 폴백**으로 부를 때만 기본 요구된다(**정상 MCP 경로는 무관**). 우회: `MULTIAGENT_CODEX_SKIP_GIT=1`. 새 작업 폴더면 `git init` 권장.

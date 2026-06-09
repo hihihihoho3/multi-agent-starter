@@ -10,7 +10,7 @@ description: Use when the user wants to set up / scaffold / install a file-based
 
 ## 절차
 
-1. **flavor 확인** — 사용자에게 묻는다(또는 현재 호스트로 제안):
+1. **flavor 기본값** — 별도 요청이 없으면 `dual`을 기본으로 설치한다. 사용자가 단일 호스트를 원할 때만 아래 flavor를 명시적으로 선택한다:
    - `claude` — Claude Code 오케스트레이터 (워커: claude-main / codex-main / codex-critic / gemini)
    - `codex` — Codex 오케스트레이터 (워커: codex-main / claude-critic / gemini)
    - `antigravity` — Antigravity 오케스트레이터 (Gemini 3.1 Pro High; 워커: claude-main / codex-main / codex-critic, 멀티모달은 오케스트레이터 직접)
@@ -19,10 +19,11 @@ description: Use when the user wants to set up / scaffold / install a file-based
 3. **생성기 위치** — `generator/`는 **이 SKILL.md와 같은 폴더 안**에 있다(스킬 자기완결). 호스트별 분기 불필요 — 이 스킬 폴더 기준 `./generator/init.py`. (Claude는 `$CLAUDE_PLUGIN_ROOT/skills/configure-multiagent/generator/init.py`로 해석됨.)
 4. **실행** — 확인 후 (이 스킬 폴더의 generator 경로로):
    ```bash
-   python3 "<이 스킬 폴더>/generator/init.py" --flavor <claude|codex|antigravity|dual> --target "<대상폴더>" --yes
+   python3 "<이 스킬 폴더>/generator/init.py" --target "<대상폴더>" --yes
    ```
-   대화형으로 진행하려면 인자 없이 실행하면 메뉴가 뜬다.
-5. **결과 보고** — `init.py`가 끝에 `validate.py`를 자동 실행한다. 그 **PASS/FAIL을 그대로 사용자에게 보고**한다. FAIL이 하나라도 있으면 "완료"라고 말하지 말 것.
+   대화형으로 flavor를 고르려면 `--interactive`를 추가한다. 특정 flavor를 강제하려면 `--flavor <claude|codex|antigravity|dual>`을 명시한다.
+5. **Windows 호스트 보정 확인** — Windows에서는 생성기가 Git for Windows를 발견하면 `bash`가 WSL stub보다 Git Bash를 먼저 보도록 현재 PATH와 사용자 PowerShell profile에 idempotent 블록을 추가한다. 이는 `call_worker.sh`가 `jq`를 못 찾는 문제를 예방한다. 사용자가 원치 않으면 `--skip-host-fixes`를 붙인다.
+6. **결과 보고** — `init.py`가 끝에 `validate.py`를 자동 실행한다. 그 **PASS/FAIL을 그대로 사용자에게 보고**한다. FAIL이 하나라도 있으면 "완료"라고 말하지 말 것.
 
 ## 동작 보장
 

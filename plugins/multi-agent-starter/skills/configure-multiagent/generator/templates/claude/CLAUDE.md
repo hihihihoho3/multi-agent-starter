@@ -13,6 +13,16 @@ Orchestrator (Claude Code session, internal reasoning)
 
 **중요**: Orchestrator의 내부 추론은 worker가 아님. claude-main worker 호출은 별도 모델 호출이므로 승인·쿼터 대상.
 
+## Worker 호출 경로 (필수)
+
+| Worker | 호출 방법 |
+|--------|----------|
+| codex-main / codex-critic | `mcp__codex__codex` MCP 도구 직접 호출 가능 |
+| gemini (agy) | **반드시** dispatcher 경유 — `bash _shared/adapters/call_worker.sh gemini <brief.md>` |
+
+- **`agy`(및 기타 CLI 워커)를 PowerShell/Bash에서 직접 실행하지 말 것.** 비대화형 환경에서 `winpty.cc` PTY assertion으로 행(hang)이 걸린다. dispatcher가 `backends.json`의 `cwd_policy: isolated_tmp` · `stdin: /dev/null` · `no_tty: true` · envelope 캡처를 적용해 정상 동작시킨다.
+- dispatcher는 JSON envelope(`status` / `exit_code` / `stdout` / `stderr_sanitized` / `fallback_used`)를 반환한다. `stderr_sanitized`에 winpty assertion이 남아도 `status: ok`·`exit_code: 0`이면 정상이다.
+
 ## Task Lifecycle
 
 1. `tasks/<task-name>/task.md` 작성 (status: pending)

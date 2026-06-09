@@ -20,6 +20,17 @@ Orchestrator (Codex session, internal reasoning)
 
 **Important**: Codex Orchestrator's internal reasoning is not a worker. A separate `codex-main`, `claude-critic`, or `gemini` call is a worker/model call and must pass the approval gate for the task.
 
+## Worker Invocation Path (required)
+
+| Worker | How to call |
+|--------|-------------|
+| codex-main | Native Codex subagent (Codex's own model call) |
+| claude-critic | Via dispatcher — `bash _shared/adapters/call_worker.sh claude-critic <brief.md>` |
+| gemini (agy) | Via dispatcher — `bash _shared/adapters/call_worker.sh gemini <brief.md>` |
+
+- **Do NOT run CLI workers (`claude`, `agy`, etc.) directly from a shell.** In a non-interactive environment they hang on a `winpty.cc` PTY assertion. The dispatcher applies `backends.json` settings (`cwd_policy: isolated_tmp`, `stdin: /dev/null`, `no_tty: true`) and envelope capture so the call succeeds.
+- The dispatcher returns a JSON envelope (`status` / `exit_code` / `stdout` / `stderr_sanitized` / `fallback_used`). A leftover winpty assertion in `stderr_sanitized` is harmless when `status: ok` and `exit_code: 0`.
+
 ## Task Lifecycle
 
 1. Create `tasks/<task-name>/task.md` (`status: pending`).

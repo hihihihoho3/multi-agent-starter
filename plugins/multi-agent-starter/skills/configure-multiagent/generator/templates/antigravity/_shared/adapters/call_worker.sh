@@ -21,8 +21,57 @@ SCRIPT_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${MULTIAGENT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 BACKENDS="$ROOT/_shared/backends.json"
 
+
+# Windows agy.exe prints through a TTY drip renderer. If this dispatcher is
+# launched from WSL/Linux while targeting the Gemini/agy worker, agy can exit 0
+# with empty stdout because the MINGW/MSYS winpty branch below cannot activate.
+# Re-enter through Git-Bash when available so uname=MINGW* and winpty capture is
+# used. This keeps WSL sessions from producing false-success empty Gemini results.
+to_gitbash_path() {
+  local p="$1" drive rest
+  case "$p" in
+    /mnt/[a-zA-Z]/*)
+      drive="${p:5:1}"; rest="${p:7}"
+      printf '/%s/%s' "$drive" "$rest" ;;
+    *) return 1 ;;
+  esac
+}
+if [ "$ROLE" = "gemini" ] && [ "${MAT_GITBASH_REEXEC:-0}" != "1" ]; then
+  if [ "$(uname -s 2>/dev/null || true)" = "Linux" ] && grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    GIT_BASH=""
+    for cand in "/mnt/c/Program Files/Git/bin/bash.exe" "/mnt/c/Program Files/Git/usr/bin/bash.exe"; do
+      [ -x "$cand" ] && { GIT_BASH="$cand"; break; }
+    done
+    if [ -n "$GIT_BASH" ]; then
+      case "$BRIEF" in /*) BRIEF_ABS="$BRIEF";; *) BRIEF_ABS="$(pwd)/$BRIEF";; esac
+      if ROOT_GB="$(to_gitbash_path "$ROOT")" && BRIEF_GB="$(to_gitbash_path "$BRIEF_ABS")"; then
+        printf -v ROOT_Q '%q' "$ROOT_GB"
+        printf -v BRIEF_Q '%q' "$BRIEF_GB"
+        printf -v ROLE_Q '%q' "$ROLE"
+        printf -v NS_Q '%q' "${MULTIAGENT_ORCH:-}"
+        exec "$GIT_BASH" -lc "cd $ROOT_Q && export MAT_GITBASH_REEXEC=1 && export MULTIAGENT_ORCH=$NS_Q && bash _shared/adapters/call_worker.sh $ROLE_Q $BRIEF_Q"
+      fi
+    fi
+  fi
+fi
+
 command -v jq >/dev/null 2>&1 || die "jq 필요(JSON 파싱)" 5
 [ -f "$BACKENDS" ] || die "backends.json 없음: $BACKENDS" 5
+
+# backends schema v2(dual): 활성 오케스트레이터 네임스페이스 결정.
+# backends schema v1(single): top-level .workers 를 사용한다.
+HAS_ORCH="$(jq -r 'has("orchestrators")' "$BACKENDS")"
+NS="${MULTIAGENT_ORCH:-}"
+if [ "$HAS_ORCH" = "true" ]; then
+  # 우선순위: 환경변수 MULTIAGENT_ORCH > backends.json 의 .active.
+  # 각 오케스트레이터(claude/codex)는 자기 호출 시 MULTIAGENT_ORCH=<self> 를 export 한다.
+  [ -n "$NS" ] || NS="$(jq -r '.active // empty' "$BACKENDS")"
+  [ -n "$NS" ] || die "활성 오케스트레이터 미지정(MULTIAGENT_ORCH 또는 backends.json .active)" 2
+  jq -e --arg ns "$NS" '.orchestrators[$ns]' "$BACKENDS" >/dev/null 2>&1 \
+    || die "알 수 없는 오케스트레이터 네임스페이스: $NS" 2
+else
+  NS="$(jq -r '.flavor // "single"' "$BACKENDS")"
+fi
 
 # timeout: coreutils timeout/gtimeout 우선, 없으면 portable bash 폴백(둘 다 유한 보장)
 TIMEOUT_BIN=""
@@ -41,8 +90,13 @@ case "$BRIEF" in *..*) die "brief 경로에 '..' 금지" 6;; esac
 [ -f "$BRIEF" ] || die "brief 파일 없음: $BRIEF" 6
 BRIEF="$(cd "$(dirname -- "$BRIEF")" && pwd)/$(basename -- "$BRIEF")"
 
-rec="$(jq -c --arg r "$ROLE" '.workers[$r] // empty' "$BACKENDS")"
-[ -n "$rec" ] || die "role 미정의: $ROLE" 2
+if [ "$HAS_ORCH" = "true" ]; then
+  rec="$(jq -c --arg ns "$NS" --arg r "$ROLE" '.orchestrators[$ns].workers[$r] // empty' "$BACKENDS")"
+  [ -n "$rec" ] || die "role 미정의(orchestrator=$NS): $ROLE" 2
+else
+  rec="$(jq -c --arg r "$ROLE" '.workers[$r] // empty' "$BACKENDS")"
+  [ -n "$rec" ] || die "role 미정의(flavor=$NS): $ROLE" 2
+fi
 
 redact() { sed -E 's/[A-Za-z0-9_-]{32,}/[REDACTED]/g'; }
 
