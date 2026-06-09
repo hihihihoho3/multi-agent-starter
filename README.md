@@ -44,6 +44,61 @@ Claude Code·Codex 모두 **동일한 플러그인 흐름**이다:
 3. 목록에서 **multi-agent-starter** 를 Enter로 설치·활성화
 4. `멀티 에이전트 시스템 구성해줘` → flavor·대상 폴더를 묻고 생성
 
+### 로컬 개발 설치 (clone 후 직접 등록)
+
+레포를 clone해 로컬 경로를 마켓플레이스로 직접 등록하는 방법. 개발·테스트 또는 오프라인 환경에 적합하다.
+
+#### Claude Code
+
+**1. `~/.claude/plugins/known_marketplaces.json` 편집**
+
+```json
+{
+  "내-마켓플레이스-이름": {
+    "source": {
+      "source": "directory",
+      "path": "/path/to/multi-agent-starter"
+    },
+    "installLocation": "~/.claude/plugins/marketplaces/내-마켓플레이스-이름",
+    "lastUpdated": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+> `source` 타입은 반드시 `"directory"`를 써야 한다. `"local"`은 Claude Code 스키마에 없는 값이라 파일이 corrupted로 표시된다.
+
+**2. `~/.claude/settings.json`에 `enabledPlugins` 추가**
+
+```json
+{
+  "enabledPlugins": {
+    "multi-agent-starter@내-마켓플레이스-이름": true
+  }
+}
+```
+
+플러그인 ID 형식은 `pluginName@marketplaceName`이다.
+
+**3. Claude Code에서 `/reload-plugins` 실행**
+
+#### Codex
+
+**`~/.codex/config.toml` 끝에 추가**
+
+```toml
+[marketplaces.내-마켓플레이스-이름]
+last_updated = "2024-01-01T00:00:00Z"
+source_type = "local"
+source = '/path/to/multi-agent-starter'
+
+[plugins."multi-agent-starter@내-마켓플레이스-이름"]
+enabled = true
+```
+
+Codex는 파일 저장 후 세션 재시작 시 자동 반영된다.
+
+---
+
 ### ZIP (플러그인 없이 — 최소 기술)
 
 1. [Releases](https://github.com/netwaif/multi-agent-starter/releases)에서 `multi-agent-starter-<버전>.zip` 받아 압축 해제
