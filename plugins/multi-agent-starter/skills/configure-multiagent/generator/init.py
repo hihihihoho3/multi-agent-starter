@@ -21,7 +21,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = SCRIPT_DIR / "templates"
-FLAVORS = ("claude", "codex", "antigravity")
+FLAVORS = ("claude", "codex", "antigravity", "dual")
 # 사용자 데이터 디렉토리 — 내용물은 절대 덮어쓰거나 지우지 않는다(.gitkeep만 보장).
 PRESERVE_DIRS = ("tasks", "_local")
 

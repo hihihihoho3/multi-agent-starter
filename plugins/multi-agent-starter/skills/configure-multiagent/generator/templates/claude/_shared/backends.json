@@ -43,12 +43,12 @@
       "timeout": 300
     },
     "gemini": {
-      "model": "gemini-3.1-pro-high",
+      "model": "Gemini 3.5 Flash (High)",
       "call_type": "cli",
       "brief_mode": "content",
       "cli": {
         "command": "agy",
-        "args_template": ["-p", "@brief_content"],
+        "args_template": ["--model", "Gemini 3.5 Flash (High)", "-p", "@brief_content"],
         "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
       },
       "cwd_policy": "isolated_tmp",

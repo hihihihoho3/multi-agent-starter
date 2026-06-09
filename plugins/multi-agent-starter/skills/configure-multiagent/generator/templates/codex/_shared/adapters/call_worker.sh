@@ -48,7 +48,7 @@ redact() { sed -E 's/[A-Za-z0-9_-]{32,}/[REDACTED]/g'; }
 
 # 단일 backend 실행 → envelope(JSON)을 stdout, exit code 반환
 run_backend() {
-  local spec="$1" ctype bmode tmo cwdp model wd out err errd rc start dur
+  local spec="$1" ctype bmode tmo cwdp model wd out err errd rc start dur agy_pty=0
   ctype="$(jq -r '.call_type' <<<"$spec")"
   model="$(jq -r '.model // "?"' <<<"$spec")"
   case "$ctype" in
@@ -74,12 +74,23 @@ run_backend() {
     cmd+=("$command_bin")
     args_json="$(jq -r '.cli.args_template[]' <<<"$spec")"   # jq 실패 시 set -e 트리거
     while IFS= read -r a; do
+      a="${a%$'\r'}"   # Windows jq.exe는 CRLF 출력 → 인자 끝 \r 제거(없으면 agy가 '--model\r' 등으로 거부)
       case "$a" in
         "@brief")         cmd+=("$BRIEF");;
         "@brief_content") cmd+=("$(cat -- "$BRIEF")");;
         *)                cmd+=("$a");;
       esac
     done <<<"$args_json"
+    # Windows(MSYS/Cygwin): agy --print는 TTY drip 렌더라 비-TTY stdout엔 0바이트.
+    # winpty로 의사 TTY를 부여해 캡처 가능하게 한다(있을 때만). 출력엔 ANSI/drip 섞임 → 사후 _deansi.py 정리.
+    if [ "$command_bin" = "agy" ]; then
+      case "$(uname -s 2>/dev/null)" in
+        MINGW*|MSYS*|CYGWIN*)
+          if command -v winpty >/dev/null 2>&1; then
+            cmd=("winpty" "-Xallow-non-tty" "${cmd[@]}"); agy_pty=1
+          fi ;;
+      esac
+    fi
     # codex 워커: 기본은 git 요구(안전망). git 없으면 명확히 실패. 옵트아웃 시에만 우회.
     if [ "$command_bin" = "codex" ]; then
       if [ "${MULTIAGENT_CODEX_SKIP_GIT:-0}" = "1" ]; then
@@ -117,11 +128,21 @@ run_backend() {
     export CI=1 DEBIAN_FRONTEND=noninteractive
     if [ "$bmode" = "stdin" ]; then
       run_limited "$tmo" -- "${cmd[@]}" <"$BRIEF"
+    elif [ "$agy_pty" = "1" ]; then
+      # winpty+agy --print는 stdin이 즉시 EOF면(/dev/null·닫힌 파이프) 출력 0바이트로
+      # 조기 종료한다. timeout 동안 열린(비-EOF) stdin을 공급해야 PTY가 유지되고
+      # agy가 응답을 낸다. agy는 timeout 전에 끝나며 sleep은 그 후 정리된다.
+      run_limited "$tmo" -- "${cmd[@]}" < <(sleep "$tmo")
     else
       run_limited "$tmo" -- "${cmd[@]}" </dev/null
     fi
   ) >"$out" 2>"$err" || rc=$?
   dur=$(( $(date +%s) - start ))
+
+  # agy(winpty) 출력 정리: ANSI 제거 + drip 줄당 최장 \r-세그먼트 채택(최종 상태 복원)
+  if [ "$agy_pty" = "1" ] && command -v python3 >/dev/null 2>&1; then
+    python3 "$SCRIPT_DIR/_deansi.py" <"$out" >"$out.clean" 2>/dev/null && mv -f "$out.clean" "$out"
+  fi
 
   local status="ok"
   [ "$rc" -ne 0 ] && status="error"

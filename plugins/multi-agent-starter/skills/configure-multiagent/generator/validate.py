@@ -37,6 +37,21 @@ FLAVOR = {
         "forbidden_worker": "gemini-critic",   # gemini 오케스트레이터 자기검수 금지
         "extra_files": [],
     },
+    # dual: 두 오케스트레이터(claude+codex)를 한 설치본에. 단일-flavor 가정과 스키마가
+    # 달라(backends v2: orchestrators{}) run_checks 대신 전용 run_dual_checks 로 분기한다.
+    # 이 항목은 argparse --flavor choices 노출용 자리표시자.
+    "dual": {
+        "instruction": "CLAUDE.md",
+        "main_worker": None,
+        "forbidden_worker": None,
+        "extra_files": [],
+    },
+}
+
+# dual backends v2: 각 오케스트레이터가 반드시 가져야 할 워커 키(>= 부분집합).
+DUAL_REQUIRED_WORKERS = {
+    "claude": {"claude-main", "codex-main", "codex-critic", "gemini"},
+    "codex": {"codex-main", "claude-critic", "gemini"},
 }
 
 TOPOLOGY = ("Pipeline", "Fan-out/Fan-in", "Expert Pool", "Producer-Reviewer")
@@ -63,6 +78,7 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
         "_shared/routing.md", "_shared/orchestrator-rules.md",
         "_shared/design-basis.md", "_shared/system-invariants.md",
         "_templates/log.md", "_templates/context.md", "_templates/worker-brief.md",
+        "_shared/adapters/_deansi.py",
     ] + cfg["extra_files"]
     missing = [r for r in required if not (target / r).is_file()]
     check(not missing, f"C1 필수 파일 존재 (없음: {missing or '-'})")
@@ -124,8 +140,128 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     check(not problems, f"C9 backends.json 스키마 (문제: {problems[0] if problems else '-'})")
     check((target / "_shared/adapters/call_worker.sh").is_file(),
           "C9b 디스패처 _shared/adapters/call_worker.sh 존재")
+    # C9c agy Windows 어댑터 핸들링 (CRLF 제거 B + winpty/held-stdin C + _deansi.py D)
+    disp = read(target, "_shared/adapters/call_worker.sh") or ""
+    agy_h = ("a%$'\\r'" in disp) and ("winpty" in disp) and ("_deansi.py" in disp)
+    check(agy_h, "C9c agy Windows 핸들링 (CRLF 제거 + winpty + _deansi.py)")
 
     return results
+
+
+def run_dual_checks(target: Path) -> list[tuple[bool, str]]:
+    """dual flavor 전용 점검 — 두 오케스트레이터(claude+codex) 합본 + backends v2.
+
+    단일-flavor run_checks 의 가정(top-level .workers, 단일 instruction)이 dual엔 안 맞아
+    별도 점검 경로로 둔다. 기존 flavor 점검 로직은 건드리지 않는다."""
+    results: list[tuple[bool, str]] = []
+
+    def check(ok: bool, msg: str) -> None:
+        results.append((bool(ok), msg))
+
+    # D1 필수 파일 (두 지침 + 공유 + claude native 자원 + 디스패처)
+    required = [
+        "CLAUDE.md", "AGENTS.md", ".gitignore", "tasks/.gitkeep",
+        "_shared/routing.md", "_shared/orchestrator-rules.md",
+        "_shared/design-basis.md", "_shared/system-invariants.md", "_shared/backends.json",
+        "_templates/log.md", "_templates/context.md", "_templates/worker-brief.md",
+        ".claude/agents/claude-main.md", ".mcp.json",
+        "_shared/adapters/call_worker.sh", "_shared/adapters/gemini_api.sh",
+        "_shared/adapters/_deansi.py",
+    ]
+    missing = [r for r in required if not (target / r).is_file()]
+    check(not missing, f"D1 필수 파일 존재 (없음: {missing or '-'})")
+
+    routing = read(target, "_shared/routing.md") or ""
+    orch = read(target, "_shared/orchestrator-rules.md") or ""
+    claude_md = read(target, "CLAUDE.md") or ""
+    agents_md = read(target, "AGENTS.md") or ""
+    log_tpl = read(target, "_templates/log.md") or ""
+    brief_tpl = read(target, "_templates/worker-brief.md") or ""
+    ctx = read(target, "_templates/context.md") or ""
+    dispatcher = read(target, "_shared/adapters/call_worker.sh") or ""
+
+    # D2 log 태그 6종
+    check(LOG_TAGS in log_tpl, "D2 log 태그 6종 (_templates/log.md)")
+    # D3 한도 수치
+    check(("1500" in ctx) and ("1200" in brief_tpl), "D3 한도 수치 1500/1200")
+    # D4 재진입 프로토콜 (orchestrator-rules + 두 지침 양쪽 포인터)
+    reentry = ("재진입 프로토콜" in orch) and ("재진입" in claude_md) and \
+        (("재진입" in agents_md) or ("re-entry" in agents_md.lower()))
+    check(reentry, "D4 재진입 프로토콜 (orchestrator-rules + CLAUDE.md + AGENTS.md)")
+    # D5 토폴로지 4패턴
+    miss_topo = [t for t in TOPOLOGY if t not in routing]
+    check(not miss_topo, f"D5 토폴로지 4패턴 (없음: {miss_topo or '-'})")
+    # D6 write_scope tasks-only (두 지침 + routing + brief)
+    ws = all("tasks-only" in t for t in (claude_md, agents_md, routing, brief_tpl))
+    check(ws, "D6 write_scope tasks-only 분포 (CLAUDE/AGENTS/routing/brief)")
+    # D7 두 오케스트레이터 섹션 자기인식
+    self_aware = ("Claude Orchestrator" in routing) and ("Codex Orchestrator" in routing) \
+        and ("자기인식" in orch)
+    check(self_aware, "D7 두 오케스트레이터 섹션 + 자기인식 (routing/orchestrator-rules)")
+    # D8 디스패처 네임스페이스 인식
+    check(("orchestrators[" in dispatcher) and ("MULTIAGENT_ORCH" in dispatcher),
+          "D8 디스패처 네임스페이스 인식 (orchestrators[ns] + MULTIAGENT_ORCH)")
+    # D9 backends v2 스키마 + 양 오케스트레이터 워커 레코드
+    raw = read(target, "_shared/backends.json")
+    problems = _dual_backends_problems(raw, target) if raw is not None else ["backends.json 없음"]
+    check(not problems, f"D9 backends v2 스키마 (문제: {problems[0] if problems else '-'})")
+    # D10 교차 벤더: 양쪽 main+critic 이 routing 에 문서화
+    check(all(w in routing for w in ("claude-main", "codex-main", "codex-critic", "claude-critic")),
+          "D10 양 오케스트레이터 워커(main+critic) routing 문서화")
+    # D11 디스패처 + gemini api 어댑터 존재
+    check((target / "_shared/adapters/call_worker.sh").is_file(),
+          "D11 디스패처 _shared/adapters/call_worker.sh 존재")
+    # D12 agy Windows 어댑터 핸들링 (CRLF 제거 B + winpty/held-stdin C + _deansi.py D)
+    agy_ok = ("a%$'\\r'" in dispatcher) and ("winpty" in dispatcher) and ("_deansi.py" in dispatcher)
+    check(agy_ok, "D12 agy Windows 핸들링 (CRLF 제거 + winpty + _deansi.py)")
+    return results
+
+
+def _dual_backends_problems(raw: str, target: Path) -> list[str]:
+    try:
+        data = json.loads(raw)
+    except Exception as e:  # noqa: BLE001
+        return [f"JSON 파싱 실패: {e}"]
+    if "mcp__gemini__gemini_" in raw:
+        return ["폐기 도구 호출형 mcp__gemini__gemini_* 잔존"]
+    p: list[str] = []
+    if not data.get("schema_version"):
+        p.append("schema_version 누락")
+    if data.get("flavor") != "dual":
+        p.append(f"flavor 불일치(파일={data.get('flavor')}, 기대=dual)")
+    if data.get("active") not in ("claude", "codex"):
+        p.append(f"active 무효(claude|codex 이어야, 파일={data.get('active')})")
+    orchs = data.get("orchestrators")
+    if not isinstance(orchs, dict):
+        return p + ["orchestrators 객체 없음"]
+    for ns in ("claude", "codex"):
+        o = orchs.get(ns)
+        if not isinstance(o, dict):
+            p.append(f"orchestrators.{ns} 없음"); continue
+        if not o.get("instruction"):
+            p.append(f"orchestrators.{ns}.instruction 누락")
+        workers = o.get("workers")
+        if not isinstance(workers, dict) or not workers:
+            p.append(f"orchestrators.{ns}.workers 비어있음"); continue
+        miss = DUAL_REQUIRED_WORKERS[ns] - set(workers.keys())
+        if miss:
+            p.append(f"orchestrators.{ns}.workers 누락 {sorted(miss)}")
+        for role, rec in workers.items():
+            if not isinstance(rec, dict):
+                p.append(f"{ns}.{role}: 레코드 형식 오류"); continue
+            p += _backend_record_problems(rec, f"{ns}.{role}", target, is_fallback=False)
+        g = workers.get("gemini")
+        if isinstance(g, dict):
+            cli = g.get("cli", {})
+            if g.get("call_type") != "cli" or cli.get("command") != "agy":
+                p.append(f"{ns}.gemini: call_type cli·command agy 아님")
+            # patch A: agy는 모델을 슬러그가 아닌 UI 라벨로 식별 → --model <라벨> 로 핀해야 한다.
+            # 라벨은 머신/계정별이라(설정 settings.json "model") 값은 강제하지 않고 핀 여부만 본다.
+            if "--model" not in (cli.get("args_template") or []):
+                p.append(f"{ns}.gemini: agy --model 라벨 핀 누락(patch A)")
+            if not g.get("model"):
+                p.append(f"{ns}.gemini: model(라벨) 누락")
+    return p
 
 
 _CALL_TYPES = {"native", "mcp", "cli", "api"}
@@ -190,8 +326,12 @@ def _gemini_policy_ok(raw: str | None) -> tuple[bool, str]:
         return False, "gemini 워커 없음"
     if g.get("call_type") != "cli" or g.get("cli", {}).get("command") != "agy":
         return False, "gemini call_type cli·command agy 아님"
-    if g.get("model") != "gemini-3.1-pro-high":
-        return False, f"gemini model이 pro-high 아님({g.get('model')})"
+    # patch A: agy는 모델을 슬러그가 아닌 UI 라벨로 식별 → --model <라벨> 핀 필수.
+    # 라벨은 머신/계정별(settings.json "model")이라 값은 강제하지 않고 핀 여부만 본다.
+    if "--model" not in (g.get("cli", {}).get("args_template") or []):
+        return False, "agy --model 라벨 핀 누락(patch A)"
+    if not g.get("model"):
+        return False, "gemini model(라벨) 누락"
     return True, ""
 
 
@@ -360,7 +500,7 @@ def main() -> None:
     if not target.is_dir():
         sys.exit(f"[error] target 폴더 없음: {target}")
 
-    results = run_checks(target, args.flavor)
+    results = run_dual_checks(target) if args.flavor == "dual" else run_checks(target, args.flavor)
     print(f"  validate: flavor={args.flavor} target={target}")
     failed = 0
     for ok, msg in results:
