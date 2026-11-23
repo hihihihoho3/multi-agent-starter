@@ -6,7 +6,7 @@
     "codex-main": {
       "model": "codex-default",
       "call_type": "native",
-      "native": { "subagent_type": "codex-main", "prompt_source": "brief", "model_alias": "codex-default" },
+      "native": { "subagent_type": "codex-main", "prompt_source": "brief" },
       "approval_class": "worker",
       "result_capture": "orchestrator"
     },
@@ -26,12 +26,12 @@
       "timeout": 300
     },
     "gemini": {
-      "model": "Gemini 3.5 Flash (High)",
+      "model": "agy-default",
       "call_type": "cli",
       "brief_mode": "content",
       "cli": {
         "command": "agy",
-        "args_template": ["--model", "Gemini 3.5 Flash (High)", "-p", "@brief_content"],
+        "args_template": ["-p", "@brief_content"],
         "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
       },
       "cwd_policy": "isolated_tmp",

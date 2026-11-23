@@ -94,7 +94,7 @@ write_scope: none | tasks-only | "src/**, tests/**"
 
 - **Antigravity Orchestrator**: agy/IDE의 현재 모델 = **Gemini 3.1 Pro High**(전역·계정단위 `/model`). 멀티모달·긴 문서도 오케스트레이터가 직접.
 - **claude-main**: 승인된 `claude` CLI의 현재 기본/별칭 모델. 버전 문자열을 repo에 핀하지 않는다.
-- **codex-main / codex-critic**: 현재 Codex 환경(`~/.codex/config.toml`) 기본값을 상속. repo에 버전 핀 금지.
+- **codex-main / codex-critic**: `codex exec`에 모델을 지정하지 않고 Codex 설정의 기본값을 사용한다. 다른 Codex 세션에서 일회성으로 바꾼 모델은 이어받지 않는다.
 - **gemini 워커 없음**: 오케스트레이터가 Gemini라 별도 gemini 워커는 두지 않는다(같은 벤더 독립성 무의미).
 
 ## 최소 Worker Set

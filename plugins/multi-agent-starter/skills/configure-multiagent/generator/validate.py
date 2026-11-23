@@ -104,7 +104,7 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     miss_topo = [t for t in TOPOLOGY if t not in routing]
     check(not miss_topo, f"C5 토폴로지 4패턴 (없음: {miss_topo or '-'})")
 
-    # C6 gemini 정책. claude/codex: gemini 워커가 cli/agy + pro-high. antigravity: 오케스트레이터가
+    # C6 gemini 정책. claude/codex: gemini 워커가 cli/agy. antigravity: 오케스트레이터가
     # agy(Gemini Pro High)이므로 별도 gemini 워커 없음 — 지침이 agy/pro-high 오케스트레이터를 명시하는지.
     if flavor == "antigravity":
         c6_ok = ("Gemini 3.1 Pro High" in instr_txt) and (("agy" in instr_txt) or ("Antigravity" in instr_txt))
@@ -255,12 +255,6 @@ def _dual_backends_problems(raw: str, target: Path) -> list[str]:
             cli = g.get("cli", {})
             if g.get("call_type") != "cli" or cli.get("command") != "agy":
                 p.append(f"{ns}.gemini: call_type cli·command agy 아님")
-            # patch A: agy는 모델을 슬러그가 아닌 UI 라벨로 식별 → --model <라벨> 로 핀해야 한다.
-            # 라벨은 머신/계정별이라(설정 settings.json "model") 값은 강제하지 않고 핀 여부만 본다.
-            if "--model" not in (cli.get("args_template") or []):
-                p.append(f"{ns}.gemini: agy --model 라벨 핀 누락(patch A)")
-            if not g.get("model"):
-                p.append(f"{ns}.gemini: model(라벨) 누락")
     return p
 
 
@@ -315,7 +309,7 @@ def _backend_record_problems(rec: dict, where: str, target: Path, *, is_fallback
 
 
 def _gemini_policy_ok(raw: str | None) -> tuple[bool, str]:
-    """C6: gemini 워커가 cli/agy + gemini-3.1-pro-high 인지 레코드 직접 검사."""
+    """C6: gemini 워커가 cli/agy를 사용하는지 검사."""
     if raw is None:
         return False, "backends.json 없음"
     try:
@@ -326,12 +320,6 @@ def _gemini_policy_ok(raw: str | None) -> tuple[bool, str]:
         return False, "gemini 워커 없음"
     if g.get("call_type") != "cli" or g.get("cli", {}).get("command") != "agy":
         return False, "gemini call_type cli·command agy 아님"
-    # patch A: agy는 모델을 슬러그가 아닌 UI 라벨로 식별 → --model <라벨> 핀 필수.
-    # 라벨은 머신/계정별(settings.json "model")이라 값은 강제하지 않고 핀 여부만 본다.
-    if "--model" not in (g.get("cli", {}).get("args_template") or []):
-        return False, "agy --model 라벨 핀 누락(patch A)"
-    if not g.get("model"):
-        return False, "gemini model(라벨) 누락"
     return True, ""
 
 

@@ -59,10 +59,10 @@ decision tree로 "누구를" 고른 뒤, "어떻게 엮을지" 고른다. **단�
 - **호출 명령**: Claude Code 내장 **Task tool (sub-agent)**
   - `subagent_type`: `claude-main` (`.claude/agents/claude-main.md`에 정의)
   - `prompt`: brief.md 내용 그대로 전달
-  - `model`: agent 정의 파일 frontmatter의 `model: opus`가 자동 적용 (별칭 — 현재 환경의 Opus로 해석. 버전 문자열 핀하지 않음. 모델 정책 참조)
+  - `model`: 호출 인자에서 생략한다. 에이전트의 `model: inherit`가 Claude 세션 모델을 따른다.
   - `description`: 짧은 작업명 (3~5 단어)
 - **권한**: 메인 Claude Code 세션의 권한 모드 상속. `--dangerously-skip-permissions` (yolo) 모드면 sub-agent도 yolo로 작동. 단 MultiAgent 시스템 게이트(`workers_approved`, 외부 쓰기 4조건)는 별개로 유지된다
-- **비용**: 있음 (Opus(`opus` 별칭) sub-agent 호출. 별도 모델 호출이며 비용·쿼터 대상) → 승인 필요
+- **비용**: 있음 (세션 모델을 쓰는 별도 sub-agent 호출이며 비용·쿼터 대상) → 승인 필요
 - **파일 쓰기**: ❌ 직접 X. Task tool이 반환한 텍스트를 Orchestrator가 받아 `result.md`에 기록
 - ※ Orchestrator의 내부 추론과 다름.
 
@@ -105,7 +105,7 @@ decision tree로 "누구를" 고른 뒤, "어떻게 엮을지" 고른다. **단�
   ```
   bash _shared/adapters/call_worker.sh gemini <brief-file>   # 결과 = JSON envelope
   ```
-  백엔드 = Antigravity `agy` CLI(헤드리스), 기본 `Gemini 3.5 Flash (High)`, 폴백 = api(`adapters/gemini_api.sh`). 폐기: `mcp__gemini-pro__*`·`mcp__gemini__*` 프록시 브리지.
+  백엔드 = Antigravity `agy` CLI(헤드리스), 모델은 agy 설정 기본값, 폴백 = api(`adapters/gemini_api.sh`). 폐기: `mcp__gemini-pro__*`·`mcp__gemini__*` 프록시 브리지.
 - **비용**: agy 쿼터 소모 → 승인 필요. 빠른 경로는 backends에서 `model`을 flash/pro-low로.
 - **파일 쓰기**: ❌ MCP 응답을 Orchestrator가 받아 기록
 
@@ -113,12 +113,12 @@ decision tree로 "누구를" 고른 뒤, "어떻게 엮을지" 고른다. **단�
 
 각 worker가 실제 어떤 모델로 도는지 정리. 사용자가 매번 명시할 필요는 없으며, 아래 기본이 자동 적용된다.
 
-- **claude-main**: 별칭 **`opus`** (`.claude/agents/claude-main.md` frontmatter `model: opus`). 버전 문자열을 핀하지 않는다 — 별칭이 현재 환경의 최신 Opus로 자동 해석되므로 모델이 올라가도 갱신 불필요.
+- **claude-main**: 호출한 Claude 세션에서 선택한 모델을 사용한다 (`.claude/agents/claude-main.md`의 `model: inherit`).
   - **추론 강도(effort)**: claude-main 정의엔 `effort` 필드가 **없음 → 세션 `/effort` 값을 상속**한다(현재 세션이 high면 high로 동작). 세션과 무관하게 고정하려면 frontmatter에 `effort: high` 등을 명시(상속 끔). 고정은 결정성↑이나 현재는 상속 유지가 기본.
-- **codex-main / codex-critic**: 사용자의 `~/.codex/config.toml` 기본값이 자동 적용된다 (현재 예: 최신 gpt + reasoning effort `high`). config.toml이 정본이라 여기에 버전을 핀하지 않는다. MCP 호출 시 `model` 파라미터를 비워두면 config 기본값 사용.
+- **codex-main / codex-critic**: 별도 Codex 실행은 호출 인자에 모델을 지정하지 않고 Codex 설정의 기본값을 사용한다. 다른 Codex 세션에서 일회성으로 바꾼 모델은 이어받지 않는다.
   - 가벼운 작업은 `profile: lightweight`로 전환 가능 (config.toml의 가벼운 모델 프로필)
   - 작업 성격상 다른 모델이 필요하면 brief.md에 명시
-- **gemini**: 백엔드 = Antigravity **`agy` CLI**(`_shared/backends.json` 정본, 디스패처 `call_worker.sh`). 기본 `Gemini 3.5 Flash (High)`(agy에선 정상 — 옛 프록시 `400 INVALID_ARGUMENT`은 비해당), 빠른 경로 `gemini-3-flash`/`pro-low`, 폴백 `api`. 옛 `mcp__gemini-pro__*` 프록시 브리지·CLI 래퍼 `mcp__gemini__*`는 **폐기**. agy 모델은 전역·계정단위(`/model`)라 per-call 핀 불가 → gemini 전용 전역을 pro-high로 둔다. 근거: `_shared/learnings.md` [2026-06-02] · `design-basis.md` D4.
+- **gemini**: 백엔드 = Antigravity **`agy` CLI**(`_shared/backends.json` 정본, 디스패처 `call_worker.sh`). 모델은 agy 설정 기본값, 폴백 `api`. 옛 `mcp__gemini-pro__*` 프록시 브리지·CLI 래퍼 `mcp__gemini__*`는 **폐기**. 근거: `_shared/learnings.md` [2026-06-02] · `design-basis.md` D4.
 
 이 정책은 사용자별 config에 따라 달라질 수 있다 — starter clone 받은 학습자는 본인의 `~/.codex/config.toml` 기본값을 한 번 확인하고 자기 환경에 맞게 조정한다.
 

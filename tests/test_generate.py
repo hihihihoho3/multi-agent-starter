@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,16 @@ FLAVORS = sorted(p.name for p in (GEN / "templates").iterdir() if p.is_dir())
 
 def run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True)
+
+
+def has_model_override(backend: dict) -> bool:
+    cli_args = backend.get("cli", {}).get("args_template", [])
+    mcp_args = backend.get("mcp", {}).get("args_template", {})
+    return (
+        "model_alias" in backend.get("native", {})
+        or "model" in mcp_args
+        or any(arg.split("=", 1)[0] in {"-m", "--model", "model"} for arg in cli_args)
+    )
 
 
 def main() -> None:
@@ -38,6 +49,32 @@ def main() -> None:
             if not ok:
                 print(v.stdout)
                 fails += 1
+            backends = json.loads((tgt / "_shared" / "backends.json").read_text(encoding="utf-8"))
+            worker_pools = (
+                [orchestrator["workers"] for orchestrator in backends["orchestrators"].values()]
+                if f == "dual" else [backends["workers"]]
+            )
+            for workers in worker_pools:
+                claude_main = workers.get("claude-main", {})
+                if claude_main.get("call_type") == "native":
+                    agent_file = tgt / ".claude" / "agents" / "claude-main.md"
+                    frontmatter = agent_file.read_text(encoding="utf-8").partition("\n---")[0]
+                    if "model: inherit" not in frontmatter.splitlines() or has_model_override(claude_main):
+                        print(f"  FAIL [{f}] claude-main must inherit the session model")
+                        fails += 1
+                for role in ("codex-main", "codex-critic"):
+                    if role not in workers:
+                        continue
+                    worker = workers[role]
+                    if any(has_model_override(backend) for backend in (worker, *worker.get("fallbacks", []))):
+                        print(f"  FAIL [{f}] {role} must not override the Codex model")
+                        fails += 1
+                if "gemini" not in workers:
+                    continue
+                gemini = workers["gemini"]
+                if gemini["model"] != "agy-default" or has_model_override(gemini):
+                    print(f"  FAIL [{f}] gemini must inherit the agy model")
+                    fails += 1
     print(f"test_generate: {'all pass' if not fails else f'{fails} fail'}")
     sys.exit(1 if fails else 0)
 

@@ -16,7 +16,7 @@
 | INV6 | 매뉴얼 `workers_approved` 예시 스키마가 approval-policy.md와 일치 (`worker:`/date-only/`purpose:`/`approved_by:`, `HH:MM` 없음) | B1/B6 재발 |
 | INV7 | 권위 우선순위 문구가 매뉴얼 §3과 design-basis.md §2에서 동일 (CLAUDE.md > routing/approval/orchestrator-rules > 매뉴얼) | Clash 해소 규칙 붕괴 |
 | INV8 | 인터랙티브 전용 + worktree/백그라운드 세션 금지 규칙이 orchestrator-rules.md와 매뉴얼에 모두 존재 | D5 위반 |
-| INV9 | gemini 백엔드가 `_shared/backends.json`에서 `agy` CLI(call_type cli·command agy)이고 기본 모델 `Gemini 3.5 Flash (High)`, routing.md·D4가 backends를 정본으로 참조 | 정본이 폐기 프록시/known-bad 경로 호출 (D4 위반) |
+| INV9 | gemini 백엔드가 `_shared/backends.json`에서 `agy` CLI(call_type cli·command agy)이고 모델은 agy 설정 기본값(`agy-default`), routing.md·D4가 backends를 정본으로 참조 | 정본이 폐기 프록시/known-bad 경로 호출 (D4 위반) |
 | INV10 | 폐기 브리지 **`mcp__gemini__gemini_*`(CLI 래퍼) 및 `mcp__gemini-pro__*`(프록시)** 가 routing.md·task-folder.md·CLAUDE.md에 **활성 호출**로 없음. 잔여 언급은 **폐기 안내 문맥에서만** | C2 재발 — 폐기 브리지 잔존 호출이 즉시 실패 (D4 위반) |
 | INV11 | 재진입 프로토콜이 orchestrator-rules.md §3 **와** CLAUDE.md Task Lifecycle 포인터에 **둘 다** 존재. routing.md 토폴로지표에 4패턴(Pipeline/Fan-out·in/Expert Pool/Producer-Reviewer) 모두 존재하고, Supervisor·Hierarchical은 "배제" 줄에만 등장(채택표 행으로 등장 금지) | D6 위반 — 재진입/패턴 규정 유실 또는 배제 패턴 부활 |
 
@@ -53,9 +53,9 @@ grep -liE '권위 우선순위|CLAUDE.md가 가장 높|문서가 충돌' "$ROOT/
 echo "INV8 인터랙티브/worktree 금지 (orchestrator-rules 에 존재해야)"
 grep -lin 'worktree\|배경\|백그라운드\|background session' "$ROOT/_shared/orchestrator-rules.md"
 
-echo "INV9 gemini 백엔드 (backends.json gemini=agy cli·pro-high 여야; 둘 다 출력돼야 PASS)"
+echo "INV9 gemini 백엔드 (backends.json gemini=agy CLI·agy-default여야; 둘 다 출력돼야 PASS)"
 grep -n '"command": "agy"' "$ROOT/_shared/backends.json"
-grep -n 'Gemini 3.5 Flash (High)' "$ROOT/_shared/backends.json"
+grep -n '"model": "agy-default"' "$ROOT/_shared/backends.json"
 
 echo "INV10 폐기 브리지 호출형 mcp__gemini__gemini_* / mcp__gemini-pro__ 활성호출 (출력 없어야 PASS)"
 grep -rn 'mcp__gemini__gemini_' "$ROOT/_shared/routing.md" "$ROOT/_templates/task-folder.md" "$ROOT/CLAUDE.md"

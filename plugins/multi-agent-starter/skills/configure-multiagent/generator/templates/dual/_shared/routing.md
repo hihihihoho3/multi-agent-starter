@@ -121,12 +121,12 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 
 | Worker | 활성 오케스트레이터 | 호출 방식 |
 |--------|------------------|----------|
-| claude-main | claude | Claude Code 내장 Task tool, `subagent_type: claude-main` (`.claude/agents/claude-main.md`, `model: opus`) |
+| claude-main | claude | Claude Code 내장 Task tool, `subagent_type: claude-main` (호출 인자 `model` 생략, 에이전트의 `model: inherit` 적용) |
 | codex-main | claude | `mcp__codex__codex` MCP (cli 폴백). claude일 때 보조 구현. |
 | codex-main | codex | 현재 Codex 환경의 native sub-agent/worker. |
 | codex-critic | claude | `mcp__codex__codex` MCP, `sandbox: read-only`, 비평 모드. |
 | claude-critic | codex | 승인된 Claude CLI (`claude -p`). 비평 모드, 쓰기 없음. |
-| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 기본 `Gemini 3.5 Flash (High)`, 폴백 api. 폐기 프록시 브리지 사용 금지. |
+| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값, 폴백 api. 폐기 프록시 브리지 사용 금지. |
 
 ## Worker 파일 쓰기 (공통)
 
@@ -136,10 +136,10 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 
 ## 모델 정책
 
-- **claude-main**: 별칭 `opus` (`.claude/agents/claude-main.md` frontmatter). 버전 핀하지 않음 — 환경의 최신 Opus로 해석.
-- **codex-main / codex-critic**: 사용자 `~/.codex/config.toml` 기본값 자동 적용. 버전 핀하지 않음.
+- **claude-main**: 호출한 Claude 세션에서 선택한 모델을 사용한다 (`.claude/agents/claude-main.md`의 `model: inherit`).
+- **codex-main / codex-critic**: 호출 인자에 모델을 지정하지 않는다. Codex의 네이티브 워커는 별도 서브에이전트 모델 설정이 없으면 호출한 세션 모델을 상속한다. Claude에서 별도로 실행하는 Codex(MCP·CLI)는 Codex 설정의 기본값을 쓴다.
 - **claude-critic**: 승인된 Claude 도구의 현재 기본/별칭 모델. 버전 핀하지 않음.
-- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 기본 `Gemini 3.5 Flash (High)`, 빠른 경로 `gemini-3-flash`/`pro-low`, 폴백 api. agy Windows CLI는 `--model` UI 라벨로 per-call 지정한다. 근거: `_shared/learnings.md` · `design-basis.md` D4.
+- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 모델은 agy 설정 기본값, 폴백 api. 근거: `_shared/learnings.md` · `design-basis.md` D4.
 
 ## Worker 추가 조건
 - 이미 있는 worker 결과로 해결 가능하면 추가 호출 금지.

@@ -45,11 +45,12 @@
 
 | flavor | 오케스트레이터 | 필요한 워커 백엔드 |
 |--------|----------------|--------------------|
-| claude | Claude Code 세션 | `codex` MCP(`mcp__codex`), `agy`(PATH, 모델=gemini-3.1-pro-high), (선택) `GEMINI_API_KEY` |
-| codex | Codex 세션 | `claude` CLI(PATH), `agy`(PATH, pro-high) |
+| claude | Claude Code 세션 | `codex` MCP(`mcp__codex`), `agy`(PATH), (선택) `GEMINI_API_KEY` |
+| codex | Codex 세션 | `claude` CLI(PATH), `agy`(PATH) |
 | antigravity | `agy`/Antigravity IDE (Gemini 3.1 Pro High) | `claude` CLI, `codex` CLI (PATH) |
 
-> 모델 정책: `agy`는 모델이 전역/계정 단위(`/model`). 검증 전 **pro-high로 설정** 확인.
+> Gemini 워커는 `agy`에 모델을 지정하지 않는다. 대화형 `agy`에서 `/model`로 선택한 값은 사용자 설정에 저장되어 다음 워커 호출에도 적용된다. 실행 시 `--model`로만 지정한 값은 그 세션에만 적용된다.
+> Codex 워커에도 모델을 지정하지 않는다. 네이티브 워커는 별도 서브에이전트 모델 설정이 없으면 호출한 세션 모델을 상속하고, 별도 Codex 실행(MCP·CLI)은 Codex 설정의 기본값을 사용한다.
 
 ### A1. 설치 (세 경로 중 택1) + 즉시 검증
 - [ ] **generator**: `python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.py --flavor <X> --target <DIR> --yes` → 설치 후 validate 자동 실행

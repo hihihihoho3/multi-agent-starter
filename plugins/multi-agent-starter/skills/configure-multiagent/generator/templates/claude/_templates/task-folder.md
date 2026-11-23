@@ -93,9 +93,9 @@ wc -w "$ROOT/tasks/$TASK/workers/$ROLE/brief.md"   # 영문 단어수 ≤ 240
 - **claude-main**: Claude Code 내장 **Task tool (sub-agent)** 호출
   - `subagent_type`: `claude-main` (`.claude/agents/claude-main.md`에 정의)
   - `prompt`: brief.md 내용 그대로
-  - `model`: agent frontmatter `model: opus` 자동 적용
+  - `model`: 호출 인자에서 생략한다. 에이전트의 `model: inherit`가 Claude 세션 모델을 따른다.
   - 응답 텍스트를 Orchestrator가 받아 `result.md`에 기록
-- **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 기본 `gemini-3.1-pro-high`). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
+- **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
 - **codex-main / codex-critic**: `mcp__codex__codex` MCP 도구 호출
   - `prompt`: brief.md 내용 그대로
   - `cwd`:
