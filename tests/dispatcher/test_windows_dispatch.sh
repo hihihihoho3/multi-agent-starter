@@ -3,7 +3,7 @@
 echo "Windows agy argument and PTY capture"
 
 ROOT="$(new_root <<'JSON'
-{"flavor":"claude","workers":{"gemini":{"model":"agy-default","call_type":"cli","cli":{"command":"agy","args_template":["--prompt","@brief_content"]},"timeout":5}}}
+{"flavor":"claude","workers":{"gemini":{"model":"agy-default","call_type":"cli","cwd_policy":"target","cli":{"command":"agy","args_template":["--prompt","@brief_content"]},"timeout":5}}}
 JSON
 )"
 BIN="$ROOT/_shared/bin"
@@ -11,7 +11,9 @@ printf '%s\n' '#!/usr/bin/env bash' 'echo MINGW64_NT' > "$BIN/uname"
 cat > "$BIN/agy" <<'BASH'
 #!/usr/bin/env bash
 [[ "$1" == --prompt && "$2" == *WINDOWS_BRIEF* ]] || exit 3
+[[ "$3" == --settings && "$4" == *'write_file(*)'* && "$4" == *'command(*)'* && "$4" == *'mcp(*)'* ]] || exit 6
 printf '\033[31mWINDOWS_OK\033[0m\n'
+printf 'PWD: %s\n' "$(pwd -P)"
 BASH
 cat > "$BIN/winpty" <<'BASH'
 #!/usr/bin/env bash
@@ -30,7 +32,8 @@ BRIEF="$ROOT/tasks/t/workers/gemini/brief.md"
 printf 'write_scope: none\nWINDOWS_BRIEF\n' > "$BRIEF"
 dispatch "$ROOT" gemini "$BRIEF"
 assert_eq "callback accepted flag and expanded brief" 0 "$RC"
-assert_eq "PTY output is stripped of ANSI" WINDOWS_OK "$(jq -r '.stdout | rtrimstr("\n")' <<<"$OUT")"
+assert_eq "PTY output is stripped of ANSI" WINDOWS_OK "$(jq -r '.stdout | split("\n")[0]' <<<"$OUT")"
+assert_contains "Windows agy uses workspace root" "PWD: $(cd "$ROOT" && pwd -P)" "$(jq -r .stdout <<<"$OUT")"
 assert_contains "winpty path kept stdin open" fake-winpty-active "$OUT"
 
 rm -rf -- "$ROOT"

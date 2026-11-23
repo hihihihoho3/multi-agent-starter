@@ -28,9 +28,9 @@ bash   tests/dispatcher/test_fallback.sh
 | `dispatcher/test_fallback.sh` | primary 실패 → fallback (S5) | 가짜 `agy`(exit1)+`claude`(exit0) |
 | `dispatcher/test_timeout.sh` | timeout → 124 (S6) | 가짜 `agy` sleep |
 | `dispatcher/test_guards.sh` | usage/`..`/role/allowlist 차단 (A6) | |
-| `dispatcher/test_codex_exec.sh` | codex exec 계약(인자·stdin·cwd=tasks/<task>/·외부 쓰기 target_repo)·`--out` 요약·진행 표시 (D15) | 실제 `_shared/backends.json` 사용, 가짜 `codex` |
-| `dispatcher/test_dual.sh` | Claude/Codex 워커풀 선택과 다른 호스트 워커 거부 | 실제 dual 레지스트리, 가짜 CLI |
-| `dispatcher/test_windows_dispatch.sh` | Windows 인자 전달, PTY stdin 유지, ANSI 정리 | 모의 실행. Git Bash에서는 Windows jq 인자 처리도 검증 |
+| `dispatcher/test_codex_exec.sh` | codex exec 계약(인자·stdin·cwd=워크스페이스 루트·외부 쓰기 target_repo)·`--out` 요약·진행 표시 (D15) | 실제 `_shared/backends.json` 사용, 가짜 `codex` |
+| `dispatcher/test_dual.sh` | 워커풀 선택, Claude `--print`·루트 실행, 교차 호출 거부 | 실제 dual 레지스트리, 가짜 CLI |
+| `dispatcher/test_windows_dispatch.sh` | Windows 인자 전달·루트 실행, PTY stdin 유지, ANSI 정리 | 모의 실행. Git Bash에서는 Windows jq 인자 처리도 검증 |
 
 ## 자동화되지 않는 것 (수동 — `docs/ACCEPTANCE.md` 참조)
 

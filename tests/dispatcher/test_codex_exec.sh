@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# codex 워커 = codex exec (D15): 실제 backends.json 계약(인자·stdin·cwd=tasks/<task>/·외부 쓰기 시 target_repo)
+# codex 워커 = codex exec: 실제 backends.json 계약(인자·stdin·cwd=루트·외부 쓰기 시 target_repo)
 # + --out 요약 출력 + stderr 진행 표시. 가짜 codex가 받은 인자·stdin·pwd를 그대로 출력.
 . "$(dirname "$0")/_lib.sh"
 echo "codex exec 기본 경로 (D15)"
@@ -10,14 +10,13 @@ chmod +x "$ROOT/_shared/bin/codex"
 EF_ERR="$(mktemp)"   # stderr 캡처는 ROOT 밖(ROOT 안 쓰기 = scope 위반)
 run() { OUT="$(MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" "$@" 2>"$EF_ERR")"; RC=$?; ERR="$(cat "$EF_ERR")"; }
 
-for pair in "codex-main:workspace-write" "codex-critic:read-only"; do
-  role="${pair%%:*}"; sb="${pair#*:}"
+for role in codex-main codex-critic; do
   approve "$ROOT" "$role"; printf 'write_scope: tasks-only\n작은 과제 BRIEF-%s\n' "$role" > "$ROOT/tasks/t/workers/$role/brief.md"
   run "$role" "$ROOT/tasks/t/workers/$role/brief.md"; so="$(jq -r .stdout <<<"$OUT")"
   assert_eq       "$role exit 0"                      0 "$RC"
-  assert_contains "$role 인자 = exec --sandbox $sb -c approval_policy=never -" "ARGS: exec --sandbox $sb -c approval_policy=never -" "$so"
+  assert_contains "$role 기본 샌드박스 read-only" "ARGS: exec --sandbox read-only -c approval_policy=never -" "$so"
   assert_contains "$role brief는 stdin"               "BRIEF-$role" "$so"
-  assert_contains "$role cwd = tasks/<task>/"         "PWD: $(cd "$ROOT/tasks/t" && pwd -P)" "$so"
+  assert_contains "$role cwd = 워크스페이스 루트"     "PWD: $(cd "$ROOT" && pwd -P)" "$so"
   assert_eq       "$role 폴백 없음"                    false "$(jq -r .fallback_used <<<"$OUT")"
   assert_contains "$role stderr 시작 표시"             "[call_worker] $role 시작" "$ERR"
   assert_contains "$role stderr 종료 표시"             "[call_worker] $role 종료 — ok" "$ERR"
@@ -25,9 +24,19 @@ done
 
 # 외부 쓰기 4조건(write_scope 패턴) → cwd = target_repo
 EXT="$(mktemp -d)"; git -C "$EXT" init -q
+approve "$ROOT" codex-main; printf 'target_repo: %s\nwrite_scope: "src/**"\n' "$EXT" > "$ROOT/tasks/t/workers/codex-main/brief.md"
+run codex-main "$ROOT/tasks/t/workers/codex-main/brief.md"
+assert_eq "외부 쓰기 승인 없으면 실행 안 함" 9 "$RC"
+printf 'target_repo: %s\nwrite_scope: none\n' "$EXT" > "$ROOT/tasks/t/workers/codex-main/brief.md"
+run codex-main "$ROOT/tasks/t/workers/codex-main/brief.md"
+assert_contains "쓰기 승인 없는 대상 경로가 cwd를 바꾸지 않음" "PWD: $(cd "$ROOT" && pwd -P)" "$(jq -r .stdout <<<"$OUT")"
 approve "$ROOT" codex-main "$EXT" "src/**"; printf 'target_repo: %s\nwrite_scope: "src/**"\n' "$EXT" > "$ROOT/tasks/t/workers/codex-main/brief.md"
 run codex-main "$ROOT/tasks/t/workers/codex-main/brief.md"
 assert_contains "외부 쓰기 → cwd=target_repo" "PWD: $(cd "$EXT" && pwd -P)" "$(jq -r .stdout <<<"$OUT")"
+assert_contains "승인된 외부 구현만 workspace-write" 'ARGS: exec --sandbox workspace-write -c approval_policy=never -' "$(jq -r .stdout <<<"$OUT")"
+approve "$ROOT" codex-critic "$EXT" "src/**"; printf 'target_repo: %s\nwrite_scope: "src/**"\n' "$EXT" > "$ROOT/tasks/t/workers/codex-critic/brief.md"
+run codex-critic "$ROOT/tasks/t/workers/codex-critic/brief.md"
+assert_contains "외부 위치에서도 critic은 read-only" 'ARGS: exec --sandbox read-only -c approval_policy=never -' "$(jq -r .stdout <<<"$OUT")"
 
 # --out: 파일엔 envelope JSON, 화면엔 요약(상태·응답)만
 approve "$ROOT" codex-critic; printf 'write_scope: none\nBRIEF-OUT\n' > "$ROOT/tasks/t/workers/codex-critic/brief.md"

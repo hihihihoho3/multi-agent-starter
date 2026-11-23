@@ -115,13 +115,13 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 | Worker | 활성 오케스트레이터 | 호출 방식 |
 |--------|------------------|----------|
 | claude-main | claude | Claude Code 내장 Task tool, `subagent_type: claude-main` (호출 인자 `model` 생략, 에이전트의 `model: inherit` 적용) |
-| codex-main | claude | `MULTIAGENT_ORCH=claude bash _shared/adapters/call_worker.sh codex-main <brief-file>` → `codex exec`, workspace-write. |
+| codex-main | claude | `MULTIAGENT_ORCH=claude bash _shared/adapters/call_worker.sh codex-main <brief-file>` → `codex exec`, 기본 read-only, 외부 구현 승인 시만 workspace-write. |
 | codex-main | codex | 네이티브 서브에이전트. 승인 후 `gate.sh`를 먼저 실행하고 호출 인자에 모델은 넣지 않는다. |
 | codex-critic | claude | `MULTIAGENT_ORCH=claude bash _shared/adapters/call_worker.sh codex-critic <brief-file>` → `codex exec`, read-only. |
 | claude-critic | codex | `MULTIAGENT_ORCH=codex bash _shared/adapters/call_worker.sh claude-critic <brief-file>`. 비평 모드, 쓰기 없음. |
 | gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값. 폐기 프록시 브리지 사용 금지. |
 
-CLI 호출은 디스패처가 `gate.sh` 승인 검사와 `scope_check.sh` 사후 검사를 적용한다. 네이티브 호출은 오케스트레이터가 직접 `gate.sh`를 통과시킨 뒤 실행한다.
+CLI 호출은 기본적으로 워크스페이스 루트에서 시작한다. 외부 쓰기 승인 시에만 승인된 `target_repo`에서 시작한다. 디스패처는 `gate.sh` 승인 검사와 `scope_check.sh` 사후 검사를 적용한다. 네이티브 호출은 오케스트레이터가 직접 `gate.sh`를 통과시킨 뒤 실행한다.
 
 ## Worker 파일 쓰기 (공통)
 

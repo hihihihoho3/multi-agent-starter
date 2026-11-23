@@ -98,18 +98,18 @@ wc -w "$ROOT/tasks/$TASK/workers/$ROLE/brief.md"   # 영문 단어수 ≤ 240
   - `model`: 호출 인자에서 생략한다. 에이전트의 `model: inherit`가 Claude 세션 모델을 따른다.
   - 응답 텍스트를 Orchestrator가 받아 `result.md`에 기록
 - **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 모델은 agy 사용자 설정을 따름). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
-- **codex-main / codex-critic**: `_shared/backends.json`의 해당 항목(`codex exec` 헤드리스 — codex-main `--sandbox workspace-write`, codex-critic `--sandbox read-only`, 승인 정책 never, cwd=`tasks/<task>/`). 디스패처 `bash _shared/adapters/call_worker.sh --out tasks/<task>/workers/<role>/envelope.json <role> <brief-file>`(Bash `timeout: 600000`) → 화면에 요약, envelope `.stdout`을 `result.md`에 기록
+- **codex-main / codex-critic**: `_shared/backends.json`의 해당 항목(`codex exec` 헤드리스 — 기본 `read-only`, 승인 정책 `never`, cwd=워크스페이스 루트). 디스패처 `bash _shared/adapters/call_worker.sh --out tasks/<task>/workers/<role>/envelope.json <role> <brief-file>`(Bash `timeout: 600000`) → 화면에 요약, envelope `.stdout`을 `result.md`에 기록
   - `prompt`: brief.md 내용 그대로
   - `cwd`:
-    - codex-main 기본: `<설치한-폴더>/tasks/<task>/` (작업 폴더 안에서 산출물 작성)
+    - 기본: 두 워커 모두 워크스페이스 루트.
     - codex-main 외부 쓰기 4조건 충족 시: brief.md의 `target_repo` 값
-    - codex-critic: brief.md의 `target_repo` 값 (비평 대상 repo 컨텍스트)
+    - 비평은 승인된 외부 위치에서도 읽기 전용이다.
   - `sandbox`:
-    - codex-main: `workspace-write` 고정 (cwd 내부만 쓰기 가능. 외부 repo 쓰기는 cwd를 `target_repo`로 변경한 경우에만 해당 패턴 내 쓰기)
+    - codex-main: 기본 `read-only`, 외부 구현 승인 시에만 `workspace-write`.
     - codex-critic: `read-only` 고정
-  - `approval-policy`: `on-failure` 권장
+  - `approval-policy`: `never` 고정
 - **codex-main 외부 repo 쓰기 조건**: `target_repo` + `write_scope` 명시 + `task.md`의 `workers_approved`에 외부 쓰기 승인 기록 + `log.md`에 `[APPROVAL]` 별도 기록 (4개 모두 충족 시에만 cwd를 `target_repo`로 변경)
-- 위 조건 미충족 시 cwd는 작업 폴더로 두고, codex-main이 `tasks/<task>/artifacts/`에 diff·patch 형태로 산출. 사용자가 직접 적용
+- 외부 승인이 없으면 루트에서 읽기 전용으로 실행한다. 오케스트레이터가 응답이나 diff를 작업 폴더에 기록한다.
 
 #### 5-4. result.md 생성
 **worker 응답을 받은 후** 생성 (사전 빈 파일 생성 금지):

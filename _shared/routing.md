@@ -86,11 +86,11 @@ decision tree로 "누구를" 고른 뒤, "어떻게 엮을지" 고른다. **단�
   ```
   bash _shared/adapters/call_worker.sh --out tasks/<task>/workers/codex-main/envelope.json codex-main tasks/<task>/workers/codex-main/brief.md
   ```
-  - 실행 인자(디스패처가 조립): `codex exec --sandbox workspace-write -c approval_policy=never -` (brief는 stdin)
-  - `cwd`(backends `cwd_policy: task`):
+  - 실행 인자(디스패처가 조립): `codex exec --sandbox read-only -c approval_policy=never -` (brief는 stdin)
+  - `cwd`(backends `cwd_policy: target`):
     - 기본(`write_scope: none`/`tasks-only`): `tasks/<task>/` — 이 안에서 산출물·diff 직접 작성
     - 외부 쓰기 4조건 충족(`write_scope` 패턴) 시: brief.md의 `target_repo`
-  - `sandbox`: `workspace-write` 고정 (cwd 내부만 쓰기 가능. cwd 밖은 sandbox가 차단)
+  - `sandbox`: 기본 `read-only`; 외부 구현 승인 시에만 `workspace-write`. 승인 경로 패턴 준수는 별도 사후 검사로 확인
   - 승인 정책: `never` 고정(헤드리스 — 승인 프롬프트를 받을 수 없으므로 결정적 거부, fail-closed)
   - 사전 게이트(gate.sh)·사후 scope 검사(scope_check.sh)는 디스패처가 자동 처리 — 오케스트레이터는 `log.md` `[WORKER_CALL]`만 남긴다
 - **Claude Code 화면 규칙 (필독)**: 호출은 Bash 도구 **한 번**으로 끝낸다.
@@ -106,7 +106,7 @@ decision tree로 "누구를" 고른 뒤, "어떻게 엮을지" 고른다. **단�
   ```
 - **비용**: 있음 (Codex 호출 쿼터) → 승인 필요
 - **파일 쓰기**:
-  - 기본: cwd=`tasks/<task>/` + sandbox=`workspace-write` → 작업 폴더 내부 산출물·diff 직접 작성 가능 (외부 repo는 sandbox가 막음)
+  - 기본: 워크스페이스 루트에서 `read-only`. Orchestrator가 응답·diff를 작업 폴더에 기록한다.
   - 외부 repo 쓰기 4조건 (CLAUDE.md "Worker 파일 쓰기 정책" 참조) 모두 충족 시에만 cwd를 `target_repo`로 변경하여 해당 scope 내 직접 쓰기 허용
   - 어느 경우에도 `_shared/`, `_templates/`, 다른 작업 폴더는 쓰지 말 것
 

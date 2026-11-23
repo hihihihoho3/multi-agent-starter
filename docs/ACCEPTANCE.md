@@ -51,6 +51,8 @@
 | dual | 같은 폴더에서 Claude Code 또는 Codex | 호스트별 네이티브 워커와 `codex exec` / `claude` CLI, `agy` |
 
 > Gemini 워커는 `agy`에 모델을 지정하지 않는다. `/model`로 저장한 모델이 다음 호출에도 적용된다. Codex 네이티브 워커는 별도 설정이 없으면 세션 모델을 따르고, `codex exec`는 Codex 설정의 기본값을 사용한다.
+>
+> CLI는 기본적으로 워크스페이스 루트, 외부 쓰기 승인 시에만 승인된 `target_repo`에서 시작한다. Windows 스모크는 `_local`의 `TMPDIR` 우회 없이 Claude `--print`와 agy `--prompt`의 종료 코드·응답을 확인하고 오케스트레이터가 `result.md`를 기록했는지 점검한다.
 
 ### A1. 설치 (세 경로 중 택1) + 즉시 검증
 - [ ] **generator**: `python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.py --flavor <X> --target <DIR> --yes` → 설치 후 validate 자동 실행

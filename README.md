@@ -94,7 +94,8 @@ v1은 이 repo를 clone해 루트 파일을 그대로 썼다. v2에서는 **같�
 - **Python 3** — 생성기 실행에 필요(`python3`). Windows는 `python`·`py`일 수 있다. 없으면 생성 단계가 안 된다.
 - **jq** — 디스패처(코덱스·제미나이 워커)의 JSON 파싱에 필요. 없으면 `call_worker: jq 필요`로 멈춘다. (macOS는 기본 미설치 — `brew install jq`)
 - **agy (Antigravity CLI)** — 제미나이 워커 백엔드. 설치·로그인 후 PATH에 있어야 한다.
-- **codex CLI** — 코덱스 워커 백엔드. 디스패처가 `codex exec` 헤드리스로 부른다(codex-main `--sandbox workspace-write`, codex-critic `--sandbox read-only`, 승인 정책 never, cwd=`tasks/<task>/`). MCP 서버 등록은 없다 — `codex mcp-server`는 codex-cli 0.154.0 무렵 제거됐다(v3.7.0부터 `.mcp.json` 미생성, update 모드는 옛 등록을 걷어냄).
+- **CLI 워커** — 기본 작업 디렉터리는 워크스페이스 루트다. 외부 쓰기 승인 확인 시에만 승인된 `target_repo`에서 시작한다.
+- **codex CLI** — 디스패처가 `codex exec`를 호출한다. 기본 `read-only`, 승인된 외부 `codex-main`만 `workspace-write`, 비평은 항상 `read-only`다. 승인 정책은 `never`이며 Codex MCP 서버는 등록하지 않는다.
 - **git** — 코덱스 워커에 필요. (1) `codex exec`는 git 저장소 안에서만 돈다 — 설치 폴더가 저장소가 아니면 디스패처가 exit 8로 즉시 알린다(생성기도 끝에 안내). 새 작업 폴더면 `git init`. 위험을 감수한 우회만 `MULTIAGENT_CODEX_SKIP_GIT=1`. (2) 클로드 워커의 작업 격리(worktree)에도 쓰인다 — 없으면 격리 없이 동작(폴백).
 
 > 에러가 나면 `call_worker: …` 메시지가 가리키는 도구를 설치하고 재시도하면 대부분 해결된다.

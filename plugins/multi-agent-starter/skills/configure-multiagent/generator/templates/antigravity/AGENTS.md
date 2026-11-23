@@ -157,9 +157,9 @@ Default checks:
 
 | Worker | Default write permission | External repo write |
 |--------|--------------------------|---------------------|
-| codex-main | `tasks/<task>/` outputs/diffs | Conditional |
+| codex-main | Read-only; orchestrator records output | Conditional |
 | codex-critic | None; Orchestrator records response | Never |
-| claude-main | tasks/<task>/ 내부(외부는 4조건) | 조건부 |
+| claude-main | Read-only; orchestrator records output | 조건부 |
 
 ### `write_scope` Values
 
@@ -176,7 +176,7 @@ All 4 are required:
 3. `task.md` `workers_approved` includes the worker and the approved `write_scope`.
 4. `log.md` has a separate `[APPROVAL]` entry for external write approval.
 
-If any condition is missing, the worker writes only inside `tasks/<task>/`, preferably as a diff or patch for user/orchestrator application.
+Without approval for external writes, the CLI worker runs read-only from the workspace root and returns its output for the orchestrator to record.
 
 **Enforcement**: pre-call = `gate.sh` G5 — the approval entry's `target_repo` and `write_scope` must **exactly match** the brief, and the `[APPROVAL]` log line must name the same worker together with the `write_scope` value (a changed value requires re-approval). Post-call = `scope_check.sh` — compares before/after snapshots (status + content hash) and **reports** out-of-scope changes (status `scope_violation`, exit 10, never auto-reverts — acceptance is the orchestrator's decision). With `none`/`tasks-only` the cwd is always the MultiAgent root, and `tasks-only` allows only the current task folder. Ignored files and non-git targets are outside the check (`scope_check: skipped`); a failed check is reported separately as `scope_error` (exit 10, no fallback).
 

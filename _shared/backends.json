@@ -20,13 +20,13 @@
       "timeout": 540,
       "approval_class": "worker",
       "result_capture": "envelope",
-      "cwd_policy": "task",
+      "cwd_policy": "target",
       "cli": {
         "command": "codex",
         "args_template": [
           "exec",
           "--sandbox",
-          "workspace-write",
+          "read-only",
           "-c",
           "approval_policy=never",
           "-"
@@ -42,7 +42,7 @@
       "timeout": 540,
       "approval_class": "worker",
       "result_capture": "envelope",
-      "cwd_policy": "task",
+      "cwd_policy": "target",
       "cli": {
         "command": "codex",
         "args_template": [
@@ -68,7 +68,7 @@
           "@brief_content"
         ]
       },
-      "cwd_policy": "isolated_tmp",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 300,

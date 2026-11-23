@@ -92,12 +92,12 @@ core_checks() {
 
   # INV13 backends 실행계약 정합 (jq) — codex 2역할 = codex exec CLI(디스패처), sandbox·approval·cwd 계약값, 폴백 없음
   if command -v jq >/dev/null 2>&1; then
-    # codex_ok <role> <sandbox>: call_type cli·command codex·exec·--sandbox 값·approval_policy=never·stdin·cwd_policy task·mcp 레코드/폴백 없음
+    # codex_ok <role> <sandbox>: CLI exec·기본 sandbox·approval never·stdin·cwd_policy target·MCP/폴백 없음
     codex_ok() { jq -e --arg r "$1" --arg sb "$2" '.workers[$r] as $w | $w.call_type == "cli" and $w.cli.command == "codex"
       and ($w.cli.args_template | .[0] == "exec" and (index("--sandbox") as $i | $i != null and .[$i+1] == $sb)
            and index("approval_policy=never") != null and .[-1] == "-")
-      and $w.brief_mode == "stdin" and $w.cwd_policy == "task" and ($w | has("mcp") | not) and (($w.fallbacks // []) | length == 0)' "$BKD" >/dev/null 2>&1; }
-    if codex_ok codex-main workspace-write && codex_ok codex-critic read-only \
+      and $w.brief_mode == "stdin" and $w.cwd_policy == "target" and ($w | has("mcp") | not) and (($w.fallbacks // []) | length == 0)' "$BKD" >/dev/null 2>&1; }
+    if codex_ok codex-main read-only && codex_ok codex-critic read-only \
        && jq -e '(.workers.gemini.fallbacks // []) | length == 0' "$BKD" >/dev/null 2>&1; then
       ok "INV13 backends 실행계약 정합"; else ng "INV13 backends 실행계약 정합"; fi
   else
@@ -201,9 +201,9 @@ PYEOF
   WORK="$(mktemp -d)"; make_copy "$WORK"; echo '| Supervisor (채택) | 상시 | 조정자 추가 |' >> "$WORK/_shared/routing.md"; run_case "INV11c"
   WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/CLAUDE.md" '운영 원칙 (Operating Principles)' '운영 지침'; run_case "INV12"
   WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_templates/worker-brief.md" '가정은 명시하고' '가정은 질문하고'; run_case "INV12c"
-  WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_shared/backends.json" '"workspace-write"' '"read-only"'; run_case "INV13"
+  WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_shared/backends.json" '"read-only"' '"workspace-write"'; run_case "INV13"
   WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_shared/backends.json" '"approval_policy=never",' ''; run_case "INV13b"
-  WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_shared/backends.json" '"cwd_policy": "task"' '"cwd_policy": "repo_root"'; run_case "INV13c"
+  WORK="$(mktemp -d)"; make_copy "$WORK"; replace_in "$WORK/_shared/backends.json" '"cwd_policy": "target"' '"cwd_policy": "task"'; run_case "INV13c"
   WORK="$(mktemp -d)"; make_copy "$WORK"; echo '- 호출: `mcp__codex__codex`' >> "$WORK/_shared/routing.md"; run_case "INV15a"
   WORK="$(mktemp -d)"; make_copy "$WORK"; printf '{"mcpServers":{"codex":{"command":"codex","args":["mcp-server"]}}}\n' > "$WORK/.mcp.json"; run_case "INV15b"
   # INV14a: 주석·헤더의 'gate.sh' 문자열은 남기고 실제 호출 줄만 제거 (문자열 존재 검사로는 못 잡는 파손)

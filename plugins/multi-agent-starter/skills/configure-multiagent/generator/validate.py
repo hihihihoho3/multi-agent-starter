@@ -270,7 +270,7 @@ def _backend_record_problems(rec: dict, where: str, target: Path, *, is_fallback
     return p
 
 
-_CODEX_SANDBOX = {"codex-main": "workspace-write", "codex-critic": "read-only"}
+_CODEX_EXEC_ROLES = ("codex-main", "codex-critic")
 
 
 def _worker_pools(data: dict) -> dict[str, dict]:
@@ -301,15 +301,15 @@ def _codex_exec_problems(raw: str | None) -> list[str]:
 
 def _codex_pool_problems(workers: dict) -> list[str]:
     p: list[str] = []
-    for role, sb in _CODEX_SANDBOX.items():
+    for role in _CODEX_EXEC_ROLES:
         w = workers.get(role)
         if not isinstance(w, dict) or w.get("call_type") == "native":
             continue
         args = (w.get("cli") or {}).get("args_template") or []
         if w.get("call_type") != "cli" or (w.get("cli") or {}).get("command") != "codex" or args[:1] != ["exec"]:
             p.append(f"{role}: codex exec CLI 아님"); continue
-        if "--sandbox" not in args or args[args.index("--sandbox") + 1:][:1] != [sb]:
-            p.append(f"{role}: --sandbox {sb} 아님")
+        if "--sandbox" not in args or args[args.index("--sandbox") + 1:][:1] != ["read-only"]:
+            p.append(f"{role}: 기본 --sandbox read-only 아님")
         if "approval_policy=never" not in args:
             p.append(f"{role}: approval_policy=never 없음")
         if "mcp" in w or w.get("fallbacks"):
@@ -371,6 +371,12 @@ def _backends_problems(raw: str, flavor: str, target: Path) -> list[str]:
                 p.append(f"{where}: 레코드 형식 오류")
                 continue
             p += _backend_record_problems(rec, where, target, is_fallback=False)
+            if rec.get("call_type") == "cli":
+                cli = rec.get("cli") or {}
+                if rec.get("cwd_policy") != "target":
+                    p.append(f"{where}: CLI cwd_policy target 아님")
+                if cli.get("command") == "claude" and (cli.get("args_template") or [])[:1] != ["--print"]:
+                    p.append(f"{where}: Claude CLI는 --print로 호출해야 함")
     return p
 
 

@@ -144,7 +144,7 @@ emit() {  # emit <envelope-json>
 
 # 단일 backend 실행 → envelope(JSON)을 stdout, exit code 반환
 run_backend() {
-  local spec="$1" ctype bmode tmo cwdp model wd sroot="" out err errd rc start dur
+  local spec="$1" ctype bmode tmo cwdp model wd sroot="" out err errd rc start dur external_scope=0
   ctype="$(jq -r '.call_type' <<<"$spec")"
   model="$(jq -r '.model // "?"' <<<"$spec")"
   case "$ctype" in
@@ -166,7 +166,10 @@ run_backend() {
     # target: 외부 쓰기 승인(write_scope 패턴)이 있을 때만 brief의 target_repo(gate가 존재 보장). none/tasks-only는 항상 $ROOT.
     #         환경변수 fallback 없음(잔존 env로 승인 없는 repo에서 실행되는 것 방지).
     target)       wd="$ROOT"
-                  case "$GATE_SCOPE" in none|tasks-only) ;; *) [ "$GATE_REPO" != "-" ] && wd="$GATE_REPO";; esac;;
+                  case "$GATE_SCOPE" in
+                    none|tasks-only) ;;
+                    *) [ "$GATE_REPO" != "-" ] && { wd="$GATE_REPO"; external_scope=1; };;
+                  esac;;
     *)            wd="$ROOT";;
   esac
   [ -n "$sroot" ] || sroot="$wd"
@@ -187,6 +190,27 @@ run_backend() {
         *)                cmd+=("$a");;
       esac
     done <<<"$args_json"
+    if [ "$cwdp" = "target" ]; then
+      case "$command_bin:$ROLE" in
+        codex:codex-main)
+          if [ "$external_scope" = 1 ]; then
+            local sandbox_index=""
+            local arg_index
+            for arg_index in "${!cmd[@]}"; do
+              if [ "${cmd[arg_index]}" = "--sandbox" ]; then sandbox_index=$((arg_index + 1)); break; fi
+            done
+            [ -n "$sandbox_index" ] && [ "${cmd[sandbox_index]:-}" = "read-only" ] \
+              || die "codex-main 기본 --sandbox read-only 설정 필요" 7
+            cmd[sandbox_index]="workspace-write"
+          fi;;
+        claude:claude-main|claude:claude-critic)
+          if [ "$ROLE" = "claude-critic" ] || [ "$external_scope" = 0 ]; then
+            cmd+=(--tools Read,Glob,Grep --strict-mcp-config --permission-mode dontAsk --permission-prompts none)
+          fi;;
+        agy:gemini)
+          cmd+=(--settings '{"permissions":{"deny":["write_file(*)","command(*)","mcp(*)"]}}');;
+      esac
+    fi
     local agy_path=""
     if [ "$command_bin" = "agy" ]; then
       agy_path="$(command -v agy || true)"

@@ -146,14 +146,14 @@ wc -w tasks/<task>/context.md   # 영문 단어수
 | Worker | 기본 쓰기 권한 | 외부 repo 쓰기 |
 |--------|------------|--------------|
 | claude-main | ❌ Orchestrator 경유 | ❌ |
-| codex-main | ✅ `tasks/<task>/` 내부 산출물·diff | ⚠️ 조건부 (아래 참조) |
+| codex-main | ❌ 읽기 전용. Orchestrator가 작업 폴더에 응답·diff 기록 | ⚠️ 조건부 (아래 참조) |
 | codex-critic | ❌ Orchestrator 경유 | ❌ |
 | gemini | ❌ envelope 응답을 Orchestrator가 기록 | ❌ |
 
 ### `write_scope` 값 정의
 
 - `none` — 쓰기 금지 (codex-critic 등 read-only 기본값)
-- `tasks-only` — `tasks/<task>/` 내부만 쓰기 (codex-main 기본 동작. 외부 repo는 안 건드림)
+- `tasks-only` — Orchestrator가 현재 작업 폴더에만 산출물을 기록한다. CLI 워커는 루트에서 읽기 전용으로 실행한다.
 - `"src/**, tests/**"` 같은 경로 패턴 — 외부 repo의 해당 경로만. 아래 4조건 모두 충족 시에만 유효
 
 ### codex-main 외부 repo 쓰기 조건 (모두 충족 필수)
@@ -163,7 +163,7 @@ wc -w tasks/<task>/context.md   # 영문 단어수
 3. `task.md`의 `workers_approved`에 해당 worker 항목이 있고, `write_scope`도 함께 승인됨
 4. `log.md`에 `[APPROVAL]` 태그로 외부 쓰기 승인 별도 기록
 
-위 4개 중 하나라도 누락 → `tasks/<task>/` 내부에만 산출물 작성 (diff·patch 형태 권장, 사용자가 직접 적용).
+외부 승인이 없으면 CLI 워커는 루트에서 읽기 전용으로 실행한다. Orchestrator가 응답·diff를 작업 폴더에 기록한다.
 
 **집행**: 사전 = `gate.sh` G5 — 승인 항목의 `target_repo`·`write_scope` 값이 brief와 **정확히 일치**하고, `[APPROVAL]` 로그 줄이 같은 worker와 `write_scope` 값을 함께 담아야 통과(값이 바뀌면 재승인). 사후 = `scope_check.sh` — 실행 전후 스냅샷(상태+내용 해시) 대조로 scope 밖 변경을 **보고**(status `scope_violation`, exit 10, 자동 revert 없음 — 채택 여부는 Orchestrator 판단). `none`/`tasks-only` 는 cwd가 항상 MultiAgent 루트이고 `tasks-only` 는 현재 작업 폴더만 허용. ignored 파일·비git 대상은 검사 범위 밖(`scope_check: skipped`), 검사 자체 실패는 `scope_error`로 구분(exit 10, 폴백 없음).
 

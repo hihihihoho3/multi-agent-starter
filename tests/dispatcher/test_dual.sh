@@ -8,8 +8,10 @@ git -C "$ROOT" init -q
 fake_bin "$ROOT" codex 0
 cat > "$ROOT/_shared/bin/claude" <<'BASH'
 #!/usr/bin/env bash
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then exit 6; fi
+[[ "$1" == --print ]] || exit 6
 echo fake-claude-out
+echo "PWD: $(pwd -P)"
+echo "TOOLS: $3 $4"
 BASH
 chmod +x "$ROOT/_shared/bin/claude"
 
@@ -28,10 +30,13 @@ approve "$ROOT" claude-critic
 BRIEF="$ROOT/tasks/t/workers/claude-critic/brief.md"
 echo 'write_scope: none' > "$BRIEF"
 mkdir -p "$ROOT/tmp"
+printf '/tmp/\n' >> "$ROOT/.git/info/exclude"
 TMPDIR="$ROOT/tmp" MULTIAGENT_ORCH=codex dispatch "$ROOT" claude-critic "$BRIEF"
 assert_eq "Codex host runs Claude critic CLI" 0 "$RC"
 assert_contains "Claude CLI ran" fake-claude-out "$OUT"
-assert_eq "Isolated worker ignores enclosing Git repo" skipped "$(jq -r .scope_check <<<"$OUT")"
+assert_contains "Claude starts at workspace root" "PWD: $(cd "$ROOT" && pwd -P)" "$(jq -r .stdout <<<"$OUT")"
+assert_contains "Claude review exposes only read tools" 'TOOLS: --tools Read,Glob,Grep' "$(jq -r .stdout <<<"$OUT")"
+assert_eq "Workspace scope check ran" ok "$(jq -r .scope_check <<<"$OUT")"
 assert_eq "Temporary workspace was removed" "" "$(ls -A "$ROOT/tmp")"
 
 MULTIAGENT_ORCH=claude dispatch "$ROOT" claude-critic "$BRIEF"

@@ -11,11 +11,11 @@
       "cli": {
         "command": "claude",
         "args_template": [
-          "--prompt",
+          "--print",
           "@brief_content"
         ]
       },
-      "cwd_policy": "repo_root",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600
@@ -29,13 +29,13 @@
         "args_template": [
           "exec",
           "--sandbox",
-          "workspace-write",
+          "read-only",
           "-c",
           "approval_policy=never",
           "-"
         ]
       },
-      "cwd_policy": "task",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600
@@ -55,7 +55,7 @@
           "-"
         ]
       },
-      "cwd_policy": "task",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600

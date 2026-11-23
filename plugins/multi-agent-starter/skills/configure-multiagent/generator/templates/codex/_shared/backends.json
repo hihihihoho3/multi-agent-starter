@@ -20,11 +20,11 @@
       "cli": {
         "command": "claude",
         "args_template": [
-          "--prompt",
+          "--print",
           "@brief_content"
         ]
       },
-      "cwd_policy": "isolated_tmp",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 300
@@ -40,7 +40,7 @@
           "@brief_content"
         ]
       },
-      "cwd_policy": "isolated_tmp",
+      "cwd_policy": "target",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 300,

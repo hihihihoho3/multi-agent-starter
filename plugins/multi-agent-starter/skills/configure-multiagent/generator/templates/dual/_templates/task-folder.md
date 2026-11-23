@@ -94,7 +94,7 @@ wc -w "$ROOT/tasks/$TASK/workers/$ROLE/brief.md"   # 영문 단어수 ≤ 240
 
 - **Claude 호스트의 claude-main**: `bash _shared/adapters/gate.sh <brief-file>` 통과 후 네이티브 호출. `model` 인자는 생략해 세션 모델을 따른다.
 - **Codex 호스트의 codex-main**: 승인 검사 통과 후 네이티브 호출. 별도 서브에이전트 설정이 없으면 호출 세션의 모델을 쓴다.
-- **CLI 워커**: `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh <role> <brief-file>`로 호출한다. Claude 호스트의 Codex 워커는 `codex exec`, Codex 호스트의 claude-critic은 `claude` CLI, 양쪽 Gemini는 `agy`를 사용한다. 디스패처가 승인·쓰기 범위를 검사한다.
+- **CLI 워커**: `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh <role> <brief-file>`로 호출한다. Claude 호스트의 Codex 워커는 `codex exec`, Codex 호스트의 claude-critic은 `claude --print` CLI, 양쪽 Gemini는 `agy`를 사용한다. 기본 cwd는 워크스페이스 루트다. 외부 쓰기 승인 시에만 승인된 `target_repo`에서 시작한다. 디스패처가 승인·쓰기 범위를 검사한다.
 - 호출 전에 현재 호스트의 `_shared/routing.md` 섹션과 `_shared/capability-profile.md` 워커 배정을 확인한다.
 
 #### 5-4. result.md 생성

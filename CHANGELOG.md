@@ -5,6 +5,11 @@
 (정본: `generator/templates/{claude,codex}/CHANGELOG.md`)를 참조한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/), 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따른다.
 
+## [Unreleased]
+
+- Claude CLI 워커는 `--print`로 호출한다. Antigravity `agy`의 옵션은 그대로 둔다.
+- Claude·Gemini·Codex CLI는 기본적으로 워크스페이스 루트에서 읽기 전용으로 실행한다. 승인된 외부 작업만 `target_repo`에서 시작한다.
+
 ## [3.7.0] - 2026-10-23
 
 ### Changed

@@ -101,6 +101,7 @@ write_scope: none | tasks-only | "src/**, tests/**"
 ## 모델 정책
 
 - **Codex Orchestrator**: 현재 Codex 세션의 모델과 reasoning 설정을 따른다.
+- **CLI 워커**: Claude는 `--print`, Gemini는 `agy --prompt`를 사용한다. 둘 다 기본적으로 워크스페이스 루트에서 읽기 전용으로 실행한다. 게이트가 외부 쓰기 승인을 확인한 경우에만 승인된 `target_repo`에서 시작하며, 검토 워커의 쓰기 제한은 유지한다.
 - **codex-main**: 호출에 `model`을 넘기지 않는다. 별도 서브에이전트 모델 설정이 없으면 현재 Codex 세션 모델을 상속한다.
 - **claude-critic**: 승인된 Claude 도구의 현재 기본/별칭 모델을 사용한다. 버전 문자열은 환경 소유 사실이므로 repo에 핀하지 않는다.
 - **gemini**: `agy` CLI에 모델을 넘기지 않고 `/model`로 저장된 사용자 설정을 따른다.
