@@ -23,6 +23,8 @@ tasks/<task-name>/
 
 ### Step 1: 작업 폴더 + 필수 파일
 
+> 새 폴더가 기존 작업의 후속·핸드오프·하위 단계라면 생성 전에 `_shared/orchestrator-rules.md` §3 "새 작업 폴더 생성 게이트"를 먼저 적용한다(사용자 확인 + parent/context/메모리 연결).
+
 ```bash
 TASK=my-task-name
 ROOT=<설치한-폴더>
@@ -95,8 +97,8 @@ wc -w "$ROOT/tasks/$TASK/workers/$ROLE/brief.md"   # 영문 단어수 ≤ 240
   - `prompt`: brief.md 내용 그대로
   - `model`: 호출 인자에서 생략한다. 에이전트의 `model: inherit`가 Claude 세션 모델을 따른다.
   - 응답 텍스트를 Orchestrator가 받아 `result.md`에 기록
-- **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
-- **codex-main / codex-critic**: `mcp__codex__codex` MCP 도구 호출
+- **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 모델은 agy 사용자 설정을 따름). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
+- **codex-main / codex-critic**: `_shared/backends.json`의 해당 항목(`codex exec` 헤드리스 — codex-main `--sandbox workspace-write`, codex-critic `--sandbox read-only`, 승인 정책 never, cwd=`tasks/<task>/`). 디스패처 `bash _shared/adapters/call_worker.sh --out tasks/<task>/workers/<role>/envelope.json <role> <brief-file>`(Bash `timeout: 600000`) → 화면에 요약, envelope `.stdout`을 `result.md`에 기록
   - `prompt`: brief.md 내용 그대로
   - `cwd`:
     - codex-main 기본: `<설치한-폴더>/tasks/<task>/` (작업 폴더 안에서 산출물 작성)

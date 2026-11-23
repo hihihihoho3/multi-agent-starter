@@ -16,8 +16,9 @@ Claude Code를 오케스트레이터로 두고 Claude·Codex·Gemini를 워커�
 
 ```
 <설치한-폴더>/
-├── CLAUDE.md              # 운영 규칙 전문 (이 폴더 안에서 claude 실행 시만 적용)
-├── _shared/
+├── CLAUDE.md              # Claude Code 운영 규칙
+├── AGENTS.md              # Codex 운영 규칙
+├── _shared/                   # 승인·쓰기 범위 검사와 호스트별 워커 설정
 │   ├── routing.md             # worker 선택 decision tree + 호출 명령
 │   ├── approval-policy.md     # 승인 게이트 정책 (claude-main 포함)
 │   ├── orchestrator-rules.md  # 세션 시작 시 자체 점검 규칙

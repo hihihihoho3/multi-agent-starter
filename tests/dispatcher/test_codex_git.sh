@@ -11,18 +11,26 @@ ROOT="$(new_root <<'JSON'
 JSON
 )"
 echo "BRIEF-TEXT" > "$ROOT/brief.txt"
+B="$(place_brief "$ROOT" c "$ROOT/brief.txt")"   # gate.sh 통과용 정규 위치 + 승인 fixture
 # 받은 인자를 그대로 출력하는 가짜 codex
 { echo '#!/usr/bin/env bash'; echo 'echo "ARGS: $*"'; echo 'exit 0'; } > "$ROOT/_shared/bin/codex"
 chmod +x "$ROOT/_shared/bin/codex"
 
 # 옵트아웃 ON → exec 바로 뒤에 --skip-git-repo-check 주입
-OUT="$(MULTIAGENT_CODEX_SKIP_GIT=1 MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" c "$ROOT/brief.txt" 2>/dev/null)"; RC=$?
+OUT="$(MULTIAGENT_CODEX_SKIP_GIT=1 MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" c "$B" 2>/dev/null)"; RC=$?
 so="$(jq -r '.stdout' <<<"$OUT")"
 assert_eq       "옵트아웃 exit 0"                 0                          "$RC"
 assert_contains "exec 뒤 --skip-git-repo-check 주입" "exec --skip-git-repo-check" "$so"
 
-# 기본(옵트아웃 OFF, git 설치됨) → 플래그 없음
-OUT2="$(MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" c "$ROOT/brief.txt" 2>/dev/null)"
+# 기본 + cwd가 git 저장소 아님 → exit 8 즉시 안내(codex 자체 오류 전에), envelope는 여전히 JSON
+OUT0="$(MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" c "$B" 2>"$ROOT/err")"; RC0=$?
+assert_eq       "비git cwd → exit 1(최종)"         1                          "$RC0"
+assert_contains "비git 안내 메시지(git init)"      "git init"                 "$(cat "$ROOT/err")"
+assert_eq       "비git envelope status"            error                      "$(jq -r .status <<<"$OUT0")"
+
+# 기본(옵트아웃 OFF, git 저장소) → 플래그 없음
+git -C "$ROOT" init -q
+OUT2="$(MULTIAGENT_ROOT="$ROOT" PATH="$ROOT/_shared/bin:$PATH" bash "$DISPATCHER" c "$B" 2>/dev/null)"
 so2="$(jq -r '.stdout' <<<"$OUT2")"
 case "$so2" in
   *"--skip-git-repo-check"*) echo "  FAIL: 기본인데 플래그 주입됨"; FAIL=$((FAIL+1));;

@@ -88,3 +88,63 @@
 "pro-high 쓰지 마라"(D4/INV9) 같은 **환경 한계발 금지 규칙**은 그 환경(백엔드)이 바뀌면 근거가 사라진다. pro-high 제외 사유는 옛 antigravity-claude-proxy의 `400 INVALID_ARGUMENT`였는데, 백엔드를 `agy` CLI로 바꾸니 pro-high가 정상 작동(spike 실증). → 금지 규칙엔 **"무엇 때문에 금지인지(원인 계층)"를 함께 적어야**, 원인이 사라졌을 때 안전하게 해제할 수 있다. 또 모델 셀렉션이 도구마다 다름을 확인: agy는 모델이 **전역·계정단위**(`/model`)라 per-call 핀 불가 → worker별 다른 모델 동시 사용은 안 되고, gemini 전용 전역을 pro-high로 고정해 운용. 마이그레이션은 D4·INV9·INV10·routing·validate C6를 **한 묶음으로** 갱신해야 내부 모순(validate가 새 정본을 FAIL)이 안 생긴다.
 **근거**: agy spike S1 GREEN + 3자 검수(codex #8이 "옛 정책과 충돌" 지적 → 검증하니 정책을 갱신해야 하는 것이었음). backends.json이 gemini 호출 정본, mcp__gemini-pro__/mcp__gemini__ 브리지 폐기.
 **worker**: orchestrator(마이그레이션·라이브 편집), codex-critic+gemini=agy(검수)
+
+## [2026-06-14] [agy-skill-discovery]
+**교훈**: agy(Antigravity CLI)의 스킬 디스커버리는 **글로벌 플러그인 경로(`~/.gemini/config/plugins/<plugin>/skills/<name>/SKILL.md`)의 최상위 스킬만** 가용 목록(`<skills>`)에 주입한다. **워크스페이스-로컬 `.{flavor}/skills/`는 스캔하지 않는다.** 또 스킬로 인식되려면 `skills/<name>/SKILL.md` **최상위 폴더**여야 한다 — 다른 스킬 하위에 중첩된 SKILL.md(`configure-multiagent/generator/knot-skill/SKILL.md`)는 파일이 따라가도 별도 스킬로 등록 안 됨. 그래서 generator가 knot을 워크스페이스에 바이트복사하던 옛 방식은 claude/codex에선 됐지만(워크스페이스 스킬 스캔 지원) agy에선 **죽은 파일**이었다. 수정: knot을 플러그인 최상위 스킬 `skills/knot/`로 승격 → 3개 도구 모두 네이티브 로드(워크스페이스 복사·C11 결합불변식 폐기, opt-in `--with-knot`은 passive 관리블록만). claude/codex도 플러그인 스킬로 동일 로드되므로 워크스페이스 복사는 애초에 중복이었다.
+**디버깅 방법론 교훈(값진 실패)**: ① 가설의 *substance*(agy=글로벌 로드)는 맞았으나 *경로*를 틀리게 봄(`~/.agents/skills/` ≠ 실제 `~/.gemini/config/plugins/`) → 정황증거로 결론 단정 말고 **실측으로 경로까지 확정**해야. ② **테스트 방식 자체가 틀리면 결론도 틀린다** — headless `agy -p` 단발 호출은 인증 불안정("not logged into Antigravity")·실행간 동작 불일치를 일으켜 오판을 키웠다. 결정타는 **agy 대화형 세션을 띄우고 gemini에게 "네 가용 스킬 목록 보여줘"라고 직접 물어본 것**("자기 시스템이니 그 정도는 안다"). 에이전트 자기보고 > 외부 추론. ③ 우회책(AGENTS.md 포인터)으로 빠지려 했으나, 사용자가 "configure-multiagent는 antigravity에서 되는데?"라는 반례로 정본 메커니즘(플러그인 스킬)을 가리켜줌 — **작동하는 예와 안 되는 예의 차이를 먼저 규명**하는 게 우회보다 빠르다.
+**근거**: live agy 세션에서 글로벌 경로에 knot 설치 후 Gemini 3.1 Pro가 `<skills>` 목록에 `configure-multiagent` + `knot` 둘 다 나열·확인. test_generate(3 flavor 관리블록 주입·멱등·기본부재) + run.sh ALL PASS. D9 갱신, C11 폐기.
+**worker**: orchestrator(systematic-debugging·라이브 agy probe·repo 리팩터·테스트)
+
+## [2026-06-24] 컷오프 이후 기능·경쟁자 주장은 1차 출처로 검증 (youtube-topic-2026-06-24)
+**교훈**: 영상 주제선정 중 두 번 "내 추론·2차 요약"이 틀릴 뻔함 → 둘 다 1차 출처로 잡음. ① **컷오프 이후 기능(`/goal`·Stop hook)은 공식 문서로 확인.** 메모리·노트북 요약으로 단정하니 "평가자 무조건 Haiku"(→설정가능)·"이미지 못 봄"(→문서에 없는 추론) 같은 과장이 나옴. 사용자가 "문서로 다 확인된거?"로 압박 → 재fetch해 정정. ② **경쟁 영상 주장은 yt-dlp로 자막 받아 직접 정독 > NotebookLM 요약(2차).** 세션1 노트북이 "개발동생=Loop Engineering 점유"라 기록했으나, 채널 직접 확인하니 그 제목은 Austin Marchese(해외)였고 개발동생 실제 영상은 다른 것. 자막 정독으로 경쟁 지형·인용문까지 정확히 확보.
+**근거**: WebFetch(code.claude.com/docs/en/goal) 원문 인용으로 평가자 사실 3건 정정. yt-dlp 자막 정독으로 Berman(F4a8aMLb678)·개발동생(QI1FNnUfiZg) 메커니즘·요금 미점유 직접 확인. 추론→문서/1차 전환 후 차별화 근거가 "추론"에서 "문서·실측"으로 단단해짐.
+**worker**: orchestrator(WebFetch·yt-dlp 자막·헤드리스 claude -p /goal 실측)
+
+## [2026-07-03] 워커 코드 산출물은 JSONL에서 추출·검증 (subway-runner-game)
+**교훈**: claude-main worker가 큰 코드(HTML 700+줄)를 텍스트로 반환할 때, 응답 본문에 **정체불명 오타 토큰**이 섞일 수 있다(실측: `background: ...#ffb game 300...`, `color: 0xffc górze` — 둘 다 로드 깨짐). 워커가 Issues에 정직하게 자기신고했다(brief의 "불확실·불일치는 result에 표면화" 규약 작동). 대응 원칙: ① 700줄을 **손으로 옮기지 말 것**(전사 중 오타 재유입). agent output JSONL(`tasks/<id>.output`)에서 python으로 assistant text→코드블록 추출→`html.unescape`(필요시)→치환 수정→파일 저장. 컨텍스트에 덤프 안 함(오버플로 방지). ② 저장 전 **기계 검증**: 알려진 garbage 토큰 부재 assert + `{}`/`()` 균형 + 기대 기능 키워드 grep + `node --check`. ③ 재호출(반영 라운드) 산출물도 같은 파이프라인 — 2차엔 오타 0이었으나 검증은 매번. 
+**imagegen 교훈**: codex imagegen의 "seamless/tileable"은 신뢰 불가 — gemini 검수가 track.png 경계 불연속(크랙·얼룩 패턴)을 잡음. 대응: 큰 랜드마크 얼룩 대신 **균질 미세패턴**으로 재생성 요청 + 인엔진 완화(중앙 주행레인은 다크 스트립 오버레이가 덮어 텍스처 이음매를 가림). 완벽 seamless가 필요하면 imagegen 단독으론 부족.
+**검증 환경 교훈**: Playwright MCP는 `file://` 차단 → `python3 -m http.server`로 서빙 후 `http://localhost`. macOS엔 `timeout` 없음(gtimeout 또는 그냥 bg). 게임류 검증은 스크린샷 + `browser_evaluate`로 상태(점수 라이브 증가·게임오버·grace 생존)를 **프로그램적으로 단언** — 스크린샷만으론 로직 미검증.
+**worker**: codex-main(imagegen×2)·claude-main(구현+반영)·codex-critic(리뷰)·gemini(이미지 검수). Producer→Reviewer→반영→재검증 파이프라인 완주.
+**검증 false-pass 교훈(중요)**: 위 Playwright http 검증은 텍스처가 "적용됨"으로 PASS를 냈으나, 사용자는 `file://`(더블클릭)로 열어 **전부 단색 폴백**이었다. WebGL은 `file://`에서 로컬 이미지를 텍스처로 로드하는 걸 CORS로 차단하는데, http 서빙은 이를 우회하므로 **검증 환경(http)이 실제 사용 환경(file://)과 달라 결함을 못 잡았다.** 원칙: ① "단일 HTML" 산출물은 **실제 배포/사용 방식으로 검증**하라(더블클릭이면 file://). ② 진짜 자체완결 단일 파일이 목표면 에셋을 **base64 data URI로 임베드**(프로토콜 독립·CORS 무관·오프라인 동작). 외부 `assets/*.png` 참조는 http 서버 전제라 "단일 파일"의 이점을 깬다. 폴백 색상 로직은 결함을 조용히 감춰 오진을 키운다 — 폴백이 있어도 "의도한 에셋이 실제로 떴는지"를 별도 단언하라.
+
+## agy(gemini worker) 헤드리스 호출 — CLI 버전업으로 플래그 조용히 사망 (2026-07-03, 심판 세션 정정)
+- **근본 원인**: agy 1.0.16에서 `-p` 단축 플래그가 **제거**됨(1.0.13엔 있었음). 미인식 플래그라 프롬프트가 조용히 무시 → 온보딩 인사만 반환, 모델 호출 0·사용량 0. 디스패처 정본(backends.json)도 `-p`라서 같이 죽어 있었음 → `--prompt`로 교정(2026-07-03).
+- **오진 정정**: 당시 세션이 "등호(`--prompt=`) 필수"로 기록했으나 실측상 **공백형 `--prompt "..."`도 정상**(등호/공백 무관, `-p`가 죽은 것). 또한 `--dangerously-skip-permissions`·`--add-dir` 권장은 **routing.md 금지 사항**(auto-mode classifier 차단·stdin hang 원인) — 손 호출 말고 `call_worker.sh gemini <brief>` 정본 경로를 쓸 것.
+- **일반 교훈**: 외부 CLI 백엔드는 버전업으로 플래그가 소리 없이 부러진다. ① 증상="응답은 오는데 내용 무관/사용량 0"이면 프롬프트 미전달 의심 → `--help`에서 플래그 존재부터 확인. ② 워커 백엔드 이상 시 스모크는 정본 경로(`call_worker.sh`)로 1회 — 손 호출로 우회 진단하면 정본이 죽은 걸 놓친다.
+- `-i`(interactive)는 /dev/tty 필요 → 헤드리스 불가. 모델명은 `agy models`의 정확한 라벨.
+
+## gemini(agy) 워커 — 다중파일 헤드리스 순회 타임아웃 + API 폴백 키 부재 (2026-07-04, dayjs-bughunt)
+- **증상**: gemini worker에 "디렉토리 절대경로 + 파일 10개 정독" brief를 주자 agy CLI가 **300s 타임아웃**(exit 124, envelope status=timeout). 이어 api 폴백도 `필수 env 없음: GEMINI_API_KEY`로 즉사 → **gemini worker 전체 불가**. (2026-07-03 `-p` 플래그 이슈와 별개 — 이번엔 `--prompt` 정본이라 온보딩이 아니라 순수 타임아웃.)
+- **진단**: agy는 `cwd_policy: isolated_tmp`에서 돌며 brief 본문의 절대경로 파일을 연다. 이미지/PDF 1건(≈26s)은 정상이지만, **소스 디렉토리 순회 + 다수 파일 열람은 300s 안에 못 끝냄**(헤드리스 auto-mode에서 파일 다수 접근이 느림/행).
+- **효과 있던 우회(정본화 권장)**: brief를 **자체 완결형**으로 재작성 — 관련 코드 스니펫을 brief 본문에 **인라인**하고 "파일 열지 말 것" 명시 → **27s exit 0, 정상 판정 반환.** 즉 gemini에 발굴·리뷰를 시킬 땐 **디렉토리를 가리키지 말고 필요한 소스를 orchestrator가 inline**하라(FS-미접근 모델 원칙 [gemini FS 미접근]과 동일 선상).
+- **고쳐야 할 것(harness)**: ① `GEMINI_API_KEY` 미설정 시 agy 타임아웃 → 폴백까지 동반 실패로 **gemini 완전 상실**. 키를 설정하거나, 폴백 부재를 조기 감지해 orchestrator에 경고. ② gemini 다중파일 작업은 backends.json timeout(300) 상향 또는 청크·인라인 강제. ③ 시간 제한 대결에선 **의존 전에 경량 스모크 1회**로 가용성 확인(안 그러면 발굴 단계에서 통째로 날림).
+- **대결 영향(공정성 메모)**: 이번 seg2-bughunt B측(하네스)은 gemini를 **발굴에 못 쓰고 후반 리뷰 1패스만** 사용 — 3모델 균등 대비 핸디캡. A측(fable5-solo)과의 자원·성능 비교 해석 시 이 제약을 반영하고, **재실험 전 위 ①~③ 수정 권장.**
+**worker**: orchestrator(agy 타임아웃 진단·자체완결 brief 우회·교차검증)
+
+## codex worker — 서버 구성 롤아웃 × CLI 회귀로 도구 호출 전멸 (2026-07-09, codex-toolcall-unsupported)
+- **증상**: standalone codex(tui/exec/MCP 전부)에서 GPT의 shell 도구 호출이 전부 `unsupported call: exec_command`로 거부. 사용자 config·훅·shim 아무것도 안 바꿨는데 어느 날 아침부터 발생.
+- **근본 원인**: OpenAI 서버가 계정에 multi_agent v2 도구 구성(comp_hash 2911→3000)을 롤아웃 + codex 0.143.0의 "multi-agent v2 도구 재정리" 회귀가 겹침. 같은 바이너리가 v1 구성에선 정상, Desktop 0.142.5는 v2 구성도 정상 → 조합 버그.
+- **진단 정본 절차**: ① `~/.codex/sessions/<날짜>/rollout-*.jsonl`에서 function_call/function_call_output으로 실제 에러 문자열 확보 → ② 세션 전수 진실표(originator·cli_version·turn_context의 comp_hash·multi_agent_version × 에러 유무)로 상관관계 특정 → ③ 정상↔에러 세션 turn_context 필드 diff. **"어느 날 갑자기"는 로컬 변경 없이도 서버 플래그 롤아웃일 수 있다** — comp_hash 변화가 그 지문.
+- **워크어라운드**: config.toml `[features] multi_agent_v2 = false`(플래그명은 바이너리 `strings | grep features.`로 발굴) → v1 구성 복귀, 검증 GREEN. **CLI 업데이트 후 플래그 제거+재테스트 필요**(협업 기능 계속 꺼짐).
+- **일반 교훈**: 외부 CLI 워커는 버전업뿐 아니라 **서버 측 구성 롤아웃으로도** 소리 없이 부러진다(agy `-p` 교훈의 서버판). 워커 이상 시 해당 CLI의 세션/rollout 로그가 1차 증거원 — 재현 호출(쿼터 소모) 전에 로그부터.
+**worker**: orchestrator 단독(로그 분석·웹 확인·config 수정·검증 codex exec 1회)
+
+## codex-critic — MCP 서버 stale로 신모델 400, codex exec 헤드리스 폴백 (2026-07-10, loadout-doctor-codex)
+- **증상**: `mcp__codex__codex` 호출이 `The 'gpt-5.6-terra' model requires a newer version of Codex`(400). CLI는 0.144.0으로 최신인데 MCP 경유만 실패 — MCP 서버 프로세스가 세션 시작 시점의 구버전 바이너리로 떠 있는 stale 문제. `model` 파라미터로 다른 모델 지정도 ChatGPT 계정 제약으로 거부될 수 있음.
+- **폴백 정본**: `codex exec --sandbox read-only "$(cat brief.md)"` 헤드리스 — cwd를 target_repo로, 출력은 파일로 리다이렉트(`> raw-output.txt`) 후 결론부만 읽기(전체 트랜스크립트가 수만 토큰). read-only 강제라 critic 규약(쓰기 금지)도 유지됨. 백그라운드 실행 + 완료 알림으로 대기.
+- **일반 교훈**: MCP 도구가 모델 버전 에러를 내면 CLI 직접 호출과 버전을 대조하라 — 같은 바이너리라도 long-lived MCP 서버는 재시작 전까지 구버전. codex MCP 실패 ≠ codex 불능.
+**worker**: codex-critic(codex exec 폴백, read-only) 1회
+
+## 집행층 코드화 — 산문 규칙을 스크립트로 옮길 때의 함정 (2026-09-06, harness-enforcement-v3.6)
+- **리뷰어 2패스가 실질적**: astra(gpt-6-astra) 설계 리뷰 11건 → 구현 리뷰 9건. 2차의 절반이 "1차 지적 부분 반영"(fallback 경로 누락·env 우회 잔존·로그 연결 미흡). **설계 지적을 반영했다고 끝이 아니라 구현 diff를 같은 리뷰어에게 다시 보여야** 반쪽 반영이 드러난다. 스레드 이어쓰기(codex-reply)로 맥락 유지.
+- **bash 집행기 함정 3종**: ① `grep -F "$ROLE"`은 부분일치 — role `w`가 `write_scope`에 매칭. 단어경계 정규식 필수. ② macOS BSD grep은 `-z`+`-f` 조합이 깨짐(byte-identical 파일도 차이로 보고) → NUL 레코드 대신 hex 인코딩 한 줄 형식. ③ `sed -E 's/x=([^ ]*)/'` 파싱은 공백 경로에서 잘림 → 구조화 출력(`--json`)으로 경계 보존.
+- **fail-closed의 빈틈은 "실패 경로"에 있다**: primary만 막고 fallback을 안 막으면 성공한 fallback이 위반을 덮는다. 스냅샷 실패를 빈 스냅샷으로 취급하면 "변경 없음"으로 통과한다. 게이트를 넣을 때 정상 경로보다 **에러·폴백·빈 입력 경로**를 먼저 fixture로 잡을 것.
+- **게이트는 오케스트레이터 자신에게도 걸린다**: 2차 리뷰 brief(1356자·241단어)를 gate.sh가 거부 → 줄여서 통과. 규칙이 코드가 되면 "이번만 예외"가 사라진다 — 그게 목적.
+- **문자열 존재 검사는 배선 검사가 아니다**: INV14를 `grep 'gate.sh'`로 하면 헤더 주석만 남아도 통과. 비주석 줄의 실제 호출 패턴을 검사하고, self-test는 **호출 줄만 제거**하는 변이로 검증.
+**worker**: codex-critic(astra) 2회(MCP, read-only) · orchestrator 구현
+
+## codex 워커 — `codex mcp-server` 폐지, `codex exec` 기본 전환 (2026-10-23, HACKERS-03-CODEX-EXEC)
+- **사실**: codex-cli 0.163.0에 `codex mcp-server`가 없다(8-24 폐지 예고 → 0.154.0 무렵 제거). `.mcp.json`의 codex 등록은 세션 시작 MCP 실패 알림, `mcp__codex__codex` 호출은 매번 실패→exec 폴백이었다.
+- **조치**: codex-main·codex-critic primary = `codex exec`(디스패처, sandbox·approval never·cwd=tasks/<task>/ 계약 그대로), `.mcp.json` 제거, 폴백 없음(D15).
+- **일반 교훈**: 외부 CLI 서브커맨드를 "정상 경로"로 삼으면 벤더 폐지 일정이 곧 시스템 장애 일정이다 — 폐지 예고를 보면 폴백을 primary로 승격하고 폐기 경로는 INV로 재유입을 막는다. Claude Code Bash 도구는 기본 2분·최대 10분이므로 워커 timeout은 그 상한보다 짧게 둬야 결과(envelope)가 잘리지 않는다.
+**worker**: orchestrator 구현 · 실제 확인 codex-main 1회 + codex-critic 1회(exec)

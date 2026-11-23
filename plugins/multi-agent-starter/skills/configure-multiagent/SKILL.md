@@ -1,6 +1,6 @@
 ---
 name: configure-multiagent
-description: Use when the user wants to set up / scaffold / install a file-based multi-agent orchestration system in a folder. Triggers on "멀티 에이전트 시스템 구성해줘", "멀티에이전트 세팅", "멀티 에이전트 시스템 만들어줘", "set up a multi-agent system", "configure multi-agent orchestration here". Scaffolds the system (approval gate, task re-entry protocol, topology patterns, invariant self-check) for Claude Code, Codex, Antigravity, or dual (Claude+Codex in one install) via a deterministic generator.
+description: Use when the user wants to set up / scaffold / install a file-based multi-agent orchestration system in a folder. Triggers on "멀티 에이전트 시스템 구성해줘", "멀티에이전트 세팅", "멀티 에이전트 시스템 만들어줘", "set up a multi-agent system", "configure multi-agent orchestration here". Scaffolds the system (approval gate, task re-entry protocol, topology patterns, invariant self-check) for Claude Code, Codex, Antigravity, or dual (Claude Code + Codex) via a deterministic generator.
 ---
 
 # Configure MultiAgent System
@@ -10,25 +10,25 @@ description: Use when the user wants to set up / scaffold / install a file-based
 
 ## 절차
 
-1. **flavor 기본값** — 별도 요청이 없으면 `dual`을 기본으로 설치한다. 사용자가 단일 호스트를 원할 때만 아래 flavor를 명시적으로 선택한다:
+1. **flavor 확인** — 사용자에게 묻는다(또는 현재 호스트로 제안):
    - `claude` — Claude Code 오케스트레이터 (워커: claude-main / codex-main / codex-critic / gemini)
    - `codex` — Codex 오케스트레이터 (워커: codex-main / claude-critic / gemini)
    - `antigravity` — Antigravity 오케스트레이터 (Gemini 3.1 Pro High; 워커: claude-main / codex-main / codex-critic, 멀티모달은 오케스트레이터 직접)
-   - `dual` — Claude·Codex 두 오케스트레이터를 **한 설치본**에. 실행한 CLI(claude/codex)가 자기 워커풀을 자동 선택. Claude 쪽 워커: claude-main / codex-main / codex-critic / gemini. Codex 쪽 워커: codex-main / claude-critic / gemini. `tasks/`·`_local/` 공유 → 쿼터에 따라 호스트 전환해도 작업 연속. 쿼터 분산·호스트 전환 운영에 적합.
+   - `dual` — 한 폴더에서 Claude Code와 Codex를 전환하며 작업 이력을 공유한다 (기본).
 2. **대상 폴더 확인** — 어디에 설치할지 묻는다. (상위 폴더 오인 주의 — 정확한 경로를 확인받는다.)
 3. **생성기 위치** — `generator/`는 **이 SKILL.md와 같은 폴더 안**에 있다(스킬 자기완결). 호스트별 분기 불필요 — 이 스킬 폴더 기준 `./generator/init.py`. (Claude는 `$CLAUDE_PLUGIN_ROOT/skills/configure-multiagent/generator/init.py`로 해석됨.)
 4. **실행** — 확인 후 (이 스킬 폴더의 generator 경로로):
    ```bash
-   python3 "<이 스킬 폴더>/generator/init.py" --target "<대상폴더>" --yes
+   python3 "<이 스킬 폴더>/generator/init.py" --flavor <claude|codex|antigravity|dual> --target "<대상폴더>" --yes
    ```
-   대화형으로 flavor를 고르려면 `--interactive`를 추가한다. 특정 flavor를 강제하려면 `--flavor <claude|codex|antigravity|dual>`을 명시한다.
-5. **Windows 호스트 보정 확인** — Windows에서는 생성기가 Git for Windows를 발견하면 `bash`가 WSL stub보다 Git Bash를 먼저 보도록 현재 PATH와 사용자 PowerShell profile에 idempotent 블록을 추가한다. 이는 `call_worker.sh`가 `jq`를 못 찾는 문제를 예방한다. 사용자가 원치 않으면 `--skip-host-fixes`를 붙인다.
-6. **결과 보고** — `init.py`가 끝에 `validate.py`를 자동 실행한다. 그 **PASS/FAIL을 그대로 사용자에게 보고**한다. FAIL이 하나라도 있으면 "완료"라고 말하지 말 것.
+   대화형으로 진행하려면 인자 없이 실행하면 메뉴가 뜬다.
+5. **결과 보고** — `init.py`가 끝에 `validate.py`를 자동 실행한다. 그 **PASS/FAIL을 그대로 사용자에게 보고**한다. FAIL이 하나라도 있으면 "완료"라고 말하지 말 것. 생성기가 "git 저장소 아님" 안내를 내면(claude·antigravity·dual) 코덱스 워커(`codex exec`)를 쓰기 전에 대상 폴더에서 `git init`이 필요하다고 함께 알린다.
+6. **knot·요금가드 안내(선택)** — 사용자가 knot 지식 vault나 goal 요금가드를 찾으면 알린다: 두 구성의 설치는 v3.0.0부터 **loadout 카탈로그**(https://github.com/netwaif/loadout) 담당이다("CLAUDE.md 구성 골라 담아줘"). `knot` 능동 스킬(save/ingest/query/lint)은 v3.1.0부터 knot 자체 플러그인이 배포한다(마켓플레이스에 `netwaif/knot` 추가). 가드 배선 자산(claude Stop 훅·codex 워처)도 v3.2.0부터 loadout guard 품목이 전부 제공한다(codex는 `--flavor codex`).
 
 ## 동작 보장
 
 - **결정적**: 번들 템플릿을 그대로 복사. 모델이 시스템 파일을 창작하지 않는다.
-- **안전**: 대상에 기존 `tasks/`·`_local/` 사용자 데이터가 있으면 보존(update 모드).
+- **안전**: 대상에 기존 `tasks/`·`_local/` 사용자 데이터가 있으면 보존(update 모드). 기존 지침파일(CLAUDE.md/AGENTS.md)은 덮어쓰기 전 `.multiagent-bak`으로 백업하고, loadout store 조각 블록(`<!-- store:*:start/end -->`)은 새 지침파일 끝에 재부착한다.
 - **쓰기 권한**: 파일 생성이므로 쓰기 권한이 필요하다. Codex에서는 `workspace-write` + 승인이 필요할 수 있다 — 막히면 사용자에게 권한을 안내한다.
 
 ## Do NOT

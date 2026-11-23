@@ -22,6 +22,7 @@
 | `claude` | Claude Code 세션 | claude-main · codex-main · codex-critic · gemini |
 | `codex`  | Codex 세션 | codex-main · claude-critic · gemini |
 | `antigravity` | Antigravity 세션 (Gemini 3.1 Pro High) | claude-main · codex-main · codex-critic (멀티모달은 오케스트레이터 직접) |
+| `dual` (기본) | 같은 폴더에서 Claude Code / Codex 전환 | 현재 호스트에 해당하는 워커 풀 |
 
 생성되는 시스템에 포함되는 것:
 
@@ -44,61 +45,6 @@ Claude Code·Codex 모두 **동일한 플러그인 흐름**이다:
 3. 목록에서 **multi-agent-starter** 를 Enter로 설치·활성화
 4. `멀티 에이전트 시스템 구성해줘` → flavor·대상 폴더를 묻고 생성
 
-### 로컬 개발 설치 (clone 후 직접 등록)
-
-레포를 clone해 로컬 경로를 마켓플레이스로 직접 등록하는 방법. 개발·테스트 또는 오프라인 환경에 적합하다.
-
-#### Claude Code
-
-**1. `~/.claude/plugins/known_marketplaces.json` 편집**
-
-```json
-{
-  "내-마켓플레이스-이름": {
-    "source": {
-      "source": "directory",
-      "path": "/path/to/multi-agent-starter"
-    },
-    "installLocation": "~/.claude/plugins/marketplaces/내-마켓플레이스-이름",
-    "lastUpdated": "2024-01-01T00:00:00.000Z"
-  }
-}
-```
-
-> `source` 타입은 반드시 `"directory"`를 써야 한다. `"local"`은 Claude Code 스키마에 없는 값이라 파일이 corrupted로 표시된다.
-
-**2. `~/.claude/settings.json`에 `enabledPlugins` 추가**
-
-```json
-{
-  "enabledPlugins": {
-    "multi-agent-starter@내-마켓플레이스-이름": true
-  }
-}
-```
-
-플러그인 ID 형식은 `pluginName@marketplaceName`이다.
-
-**3. Claude Code에서 `/reload-plugins` 실행**
-
-#### Codex
-
-**`~/.codex/config.toml` 끝에 추가**
-
-```toml
-[marketplaces.내-마켓플레이스-이름]
-last_updated = "2024-01-01T00:00:00Z"
-source_type = "local"
-source = '/path/to/multi-agent-starter'
-
-[plugins."multi-agent-starter@내-마켓플레이스-이름"]
-enabled = true
-```
-
-Codex는 파일 저장 후 세션 재시작 시 자동 반영된다.
-
----
-
 ### ZIP (플러그인 없이 — 최소 기술)
 
 1. [Releases](https://github.com/netwaif/multi-agent-starter/releases)에서 `multi-agent-starter-<버전>.zip` 받아 압축 해제
@@ -108,7 +54,7 @@ Codex는 파일 저장 후 세션 재시작 시 자동 반영된다.
 ### 직접(개발자) — 생성기 호출
 
 ```bash
-python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.py --flavor <claude|codex|antigravity> --target "<대상폴더>" --yes
+python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.py --flavor <claude|codex|antigravity|dual> --target "<대상폴더>" --yes
 ```
 
 설치가 끝나면 자동으로 `validate.py`가 돌며 PASS/FAIL을 보여준다.
@@ -122,7 +68,7 @@ python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.p
 ```
 
 Orchestrator가 작업 폴더를 만들고 → 워커 승인을 요청한 뒤 → 진행한다.
-운영 규칙 전문은 생성된 폴더의 `CLAUDE.md`(claude) / `AGENTS.md`(codex·antigravity) 참조.
+운영 규칙은 생성된 폴더의 `CLAUDE.md`(claude) 또는 `AGENTS.md`(codex·antigravity) 참조. `dual`은 둘 다 생성하고 같은 `tasks/`와 `_local/`을 공유한다. Windows Git Bash에서는 `jq`의 인자 줄바꿈을 정리하고, `winpty`가 있으면 Gemini 출력 캡처에 사용한다.
 
 ## v1 → v2 마이그레이션 (기존 clone 사용자)
 
@@ -146,11 +92,10 @@ v1은 이 repo를 clone해 루트 파일을 그대로 썼다. v2에서는 **같�
 대부분의 실패는 **명확한 메시지와 함께 멈춘다**(조용히 깨지지 않음). 아래만 갖추면 된다.
 
 - **Python 3** — 생성기 실행에 필요(`python3`). Windows는 `python`·`py`일 수 있다. 없으면 생성 단계가 안 된다.
-- **jq** — 제미나이 워커(gemini/api 디스패처)의 JSON 파싱에 필요. 없으면 `call_worker: jq 필요`로 멈춘다. (macOS는 기본 미설치 — `brew install jq`)
-- **Windows Git Bash PATH 보정** — Windows에서 `bash`가 `C:\Windows\System32\bash.exe`(WSL launcher)로 먼저 잡히면 dispatcher가 설치된 `jq`를 못 찾을 수 있다. 생성기는 Git for Windows가 있으면 현재 프로세스 PATH를 보정하고, 사용자 PowerShell profile(`Documents\PowerShell\profile.ps1`)에는 `%ProgramFiles%`/`%ProgramFiles(x86)%`에서 Git Bash `bin` 경로를 시작 시마다 동적으로 찾아 우선 적용하는 idempotent 블록을 추가한다. 원치 않으면 `--skip-host-fixes`로 생략한다.
+- **jq** — 디스패처(코덱스·제미나이 워커)의 JSON 파싱에 필요. 없으면 `call_worker: jq 필요`로 멈춘다. (macOS는 기본 미설치 — `brew install jq`)
 - **agy (Antigravity CLI)** — 제미나이 워커 백엔드. 설치·로그인 후 PATH에 있어야 한다.
-- **codex CLI** — 코덱스 워커 백엔드. 정상 경로는 MCP 서버(`codex mcp-server`, `.mcp.json`)다.
-- **git** — 권장(필수 아님). (1) 클로드 워커의 작업 격리(worktree)에 쓰인다 — 없으면 격리 없이 동작(폴백). (2) 코덱스를 **CLI 폴백**으로 부를 때만 기본 요구된다(**정상 MCP 경로는 무관**). 우회: `MULTIAGENT_CODEX_SKIP_GIT=1`. 새 작업 폴더면 `git init` 권장.
+- **codex CLI** — 코덱스 워커 백엔드. 디스패처가 `codex exec` 헤드리스로 부른다(codex-main `--sandbox workspace-write`, codex-critic `--sandbox read-only`, 승인 정책 never, cwd=`tasks/<task>/`). MCP 서버 등록은 없다 — `codex mcp-server`는 codex-cli 0.154.0 무렵 제거됐다(v3.7.0부터 `.mcp.json` 미생성, update 모드는 옛 등록을 걷어냄).
+- **git** — 코덱스 워커에 필요. (1) `codex exec`는 git 저장소 안에서만 돈다 — 설치 폴더가 저장소가 아니면 디스패처가 exit 8로 즉시 알린다(생성기도 끝에 안내). 새 작업 폴더면 `git init`. 위험을 감수한 우회만 `MULTIAGENT_CODEX_SKIP_GIT=1`. (2) 클로드 워커의 작업 격리(worktree)에도 쓰인다 — 없으면 격리 없이 동작(폴백).
 
 > 에러가 나면 `call_worker: …` 메시지가 가리키는 도구를 설치하고 재시도하면 대부분 해결된다.
 
@@ -183,7 +128,7 @@ multi-agent-starter/                 # 마켓플레이스 카탈로그 (루트)
 │               ├── init.py         # 결정적 생성기 (flavor·대상·tasks 보존·dry-run·guard)
 │               ├── validate.py     # flavor별 불변식 자가점검
 │               ├── build_zip.py    # 자립형 ZIP 빌더 (재현가능)
-│               └── templates/{claude,codex,antigravity}/   # 세 flavor 정본
+│               └── templates/{claude,codex,antigravity,dual}/
 ├── tests/                          # 오프라인 결정적 회귀 테스트 (run.sh)
 └── docs/ACCEPTANCE.md              # 3호스트 수용 체크리스트 + 테스트 시나리오
 ```
@@ -195,7 +140,7 @@ multi-agent-starter/                 # 마켓플레이스 카탈로그 (루트)
 ## 품질 — 테스트 & 수용 검증
 
 - **자동 회귀 테스트**(외부·유료 모델 호출 0): `bash tests/run.sh`
-  - 3 flavor 생성→`validate` 전부 PASS, update 모드 사용자 데이터 보존,
+  - 4 flavor 생성→`validate` 전부 PASS, update 모드 사용자 데이터 보존,
     디스패처 폴백·타임아웃·입력 가드(가짜 백엔드 주입). 매 빌드 안전 실행.
 - **수용 체크리스트**: [`docs/ACCEPTANCE.md`](./docs/ACCEPTANCE.md) — claude·codex·antigravity
   세 호스트별 설치→구조→스모크→기능→안전 4층 검증 + 사인오프 표. 배포 전 호스트별로 채운다.

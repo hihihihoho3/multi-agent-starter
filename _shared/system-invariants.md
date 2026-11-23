@@ -16,80 +16,28 @@
 | INV6 | 매뉴얼 `workers_approved` 예시 스키마가 approval-policy.md와 일치 (`worker:`/date-only/`purpose:`/`approved_by:`, `HH:MM` 없음) | B1/B6 재발 |
 | INV7 | 권위 우선순위 문구가 매뉴얼 §3과 design-basis.md §2에서 동일 (CLAUDE.md > routing/approval/orchestrator-rules > 매뉴얼) | Clash 해소 규칙 붕괴 |
 | INV8 | 인터랙티브 전용 + worktree/백그라운드 세션 금지 규칙이 orchestrator-rules.md와 매뉴얼에 모두 존재 | D5 위반 |
-| INV9 | gemini 백엔드가 `_shared/backends.json`에서 `agy` CLI(call_type cli·command agy)이고 모델은 agy 설정 기본값(`agy-default`), routing.md·D4가 backends를 정본으로 참조 | 정본이 폐기 프록시/known-bad 경로 호출 (D4 위반) |
+| INV9 | gemini 백엔드가 `_shared/backends.json`에서 `agy` CLI(call_type cli·command agy)이고 사용자 설정 모델(`agy-default`), routing.md·D4가 backends를 정본으로 참조 | 정본이 폐기 프록시/known-bad 경로 호출 (D4 위반) |
 | INV10 | 폐기 브리지 **`mcp__gemini__gemini_*`(CLI 래퍼) 및 `mcp__gemini-pro__*`(프록시)** 가 routing.md·task-folder.md·CLAUDE.md에 **활성 호출**로 없음. 잔여 언급은 **폐기 안내 문맥에서만** | C2 재발 — 폐기 브리지 잔존 호출이 즉시 실패 (D4 위반) |
 | INV11 | 재진입 프로토콜이 orchestrator-rules.md §3 **와** CLAUDE.md Task Lifecycle 포인터에 **둘 다** 존재. routing.md 토폴로지표에 4패턴(Pipeline/Fan-out·in/Expert Pool/Producer-Reviewer) 모두 존재하고, Supervisor·Hierarchical은 "배제" 줄에만 등장(채택표 행으로 등장 금지) | D6 위반 — 재진입/패턴 규정 유실 또는 배제 패턴 부활 |
+| INV12 | 카파시 4원칙: CLAUDE.md에 "운영 원칙 (Operating Principles)" 섹션 존재, _templates/worker-brief.md에 "Worker 행동 규약" 고정 블록 존재, **블록 안에 사용자질문 지시(질문/ask) 없음**, worker-result.md 체크리스트에 표면화 항목 존재 | D8 위반 — 층별 적용 붕괴(워커 one-shot 구조와 모순) 또는 워커 규약 유실 |
+| INV14 | 집행층 존재·배선: `_shared/adapters/gate.sh`·`scope_check.sh`·`_shared/reentry-check.sh` 존재(bash 경유 호출이라 실행권한 불요), `call_worker.sh`가 `gate.sh`·`scope_check.sh`를 호출, CLAUDE.md에 `gate.sh`·`reentry-check.sh` 포인터, orchestrator-rules §3에 `reentry-check.sh` | D14 위반 — 집행 스크립트 유실 또는 디스패처·지침 배선 끊김(산문만 남아 fail-open 회귀) |
+| INV13 | backends.json 실행계약 정합: codex-main·codex-critic = `call_type: cli`·`codex exec`·`-c approval_policy=never`·brief stdin(`-`)·`cwd_policy: task`·`mcp` 레코드/폴백 없음, sandbox = codex-main `workspace-write` / codex-critic `read-only`. gemini `fallbacks` = 빈 배열(미구현 api 슬롯 비활성) | D11·D15 위반 — 실행 정본↔권위문서 드리프트 재발, 폐기 MCP 경로 부활 또는 거짓 안전신호(미구현 폴백) 부활 |
+| INV15 | 폐기된 codex MCP 경로 부재: `.mcp.json`(있으면)에 `mcp-server` 등록 없음, routing.md·task-folder.md·CLAUDE.md에 `mcp__codex__` 호출 없음 | D15 위반 — 세션 시작 MCP 실패 알림·호출마다 실패→폴백 재발 (codex-cli 0.154.0+엔 `codex mcp-server` 없음) |
 
-> ※ **매뉴얼(외부 repo) 비교 항목은 유지보수자 전용(optional)**. 공개 설치본에는 매뉴얼이 없으므로 핵심 점검(INV1–4·6–11)은 시스템 파일 자체 일관성만 본다. INV5와 각 INV의 매뉴얼 측 일치 검사는 아래 스크립트의 optional 블록에서 매뉴얼이 있을 때만 실행된다.
+> ※ **매뉴얼(외부 repo) 비교 항목은 유지보수자 전용(optional)**. 공개 설치본에는 매뉴얼이 없으므로 핵심 점검(INV1–4·6–12)은 시스템 파일 자체 일관성만 본다. INV5와 각 INV의 매뉴얼 측 일치 검사, INV12e/f의 3 flavor 교차 점검은 아래 스크립트의 optional 블록에서 해당 자산이 있을 때만 실행된다.
 
-## 자가 점검 스크립트
+## 자가 점검 실행
 
-`~/VSCodeWorkspace/MultiAgent`에서 실행. 핵심 블록은 시스템 파일만 검사하므로
-**공개 설치본도 매뉴얼 없이 그대로 실행**된다. 유지보수자 블록은 외부 매뉴얼이 있을 때만 돈다.
+정본 러너 = `_shared/check-invariants.sh` (exit-code 판정 — 2026-07-24 수동 grep 나열에서 전환, 근거: 자체 리뷰 공통 발견 C2 "false PASS").
 
 ```bash
-# ── 핵심 자가점검 (시스템 파일만; 외부 매뉴얼 불필요) ──
-ROOT=~/VSCodeWorkspace/MultiAgent
-
-echo "INV1 tasks-only 분포 (CLAUDE/routing/templates 모두 존재해야)"
-grep -l 'tasks-only' "$ROOT/CLAUDE.md" "$ROOT/_shared/routing.md" \
-  "$ROOT/_templates/worker-brief.md" "$ROOT/_templates/task-folder.md"
-
-echo "INV2 codex-critic 전용 강제 표현 (출력 없어야 PASS)"
-grep -n 'result.md. 존재 필수\|claude-main 결과 필요 → 항상 후행' "$ROOT/_shared/routing.md"
-
-echo "INV3 log 태그 (_templates/log.md 에 6종 정의 라인 확인)"
-grep -n 'DECISION | WORKER_CALL | VERIFICATION | ERROR | APPROVAL | COMPLETE' "$ROOT/_templates/log.md"
-
-echo "INV4 한도 수치 (1500 / 1200 각 파일)"
-grep -rn '1500자\|1200자' "$ROOT/CLAUDE.md" "$ROOT/_templates/context.md" "$ROOT/_templates/worker-brief.md"
-
-echo "INV6 workers_approved HH:MM 잔존 (approval-policy.md; 출력 없어야 PASS)"
-grep -n 'approved_at: <YYYY-MM-DD HH:MM>' "$ROOT/_shared/approval-policy.md"
-
-echo "INV7 권위 우선순위 문구 (design-basis 에 존재해야)"
-grep -liE '권위 우선순위|CLAUDE.md가 가장 높|문서가 충돌' "$ROOT/_shared/design-basis.md"
-
-echo "INV8 인터랙티브/worktree 금지 (orchestrator-rules 에 존재해야)"
-grep -lin 'worktree\|배경\|백그라운드\|background session' "$ROOT/_shared/orchestrator-rules.md"
-
-echo "INV9 gemini 백엔드 (backends.json gemini=agy CLI·agy-default여야; 둘 다 출력돼야 PASS)"
-grep -n '"command": "agy"' "$ROOT/_shared/backends.json"
-grep -n '"model": "agy-default"' "$ROOT/_shared/backends.json"
-
-echo "INV10 폐기 브리지 호출형 mcp__gemini__gemini_* / mcp__gemini-pro__ 활성호출 (출력 없어야 PASS)"
-grep -rn 'mcp__gemini__gemini_' "$ROOT/_shared/routing.md" "$ROOT/_templates/task-folder.md" "$ROOT/CLAUDE.md"
-echo "INV10b mcp__gemini__* / mcp__gemini-pro__ 잔여 언급 — 전부 '폐기' 안내 문맥이어야 (호출·예시·「또는」 선택지면 FAIL)"
-grep -rn 'mcp__gemini__\|mcp__gemini-pro__' "$ROOT/_shared/routing.md" "$ROOT/_templates/task-folder.md" "$ROOT/CLAUDE.md"
-
-echo "INV11a 재진입: orchestrator-rules §3 + CLAUDE.md 포인터 둘 다 (둘 다 PASS 떠야)"
-grep -q '재진입 프로토콜' "$ROOT/_shared/orchestrator-rules.md" && echo " orchestrator-rules PASS" || echo " orchestrator-rules FAIL"
-grep -q '재진입 프로토콜' "$ROOT/CLAUDE.md" && echo " CLAUDE.md PASS" || echo " CLAUDE.md FAIL"
-echo "INV11b 토폴로지 4패턴 모두 존재 (4개 PASS 떠야)"
-for p in 'Pipeline' 'Fan-out/Fan-in' 'Expert Pool' 'Producer-Reviewer'; do
-  grep -q "$p" "$ROOT/_shared/routing.md" && echo " $p PASS" || echo " $p FAIL"
-done
-echo "INV11c Supervisor/Hierarchical 은 '배제' 줄에만 (배제 아닌 등장 0이어야 PASS)"
-grep -nE 'Supervisor|Hierarchical' "$ROOT/_shared/routing.md" | grep -v '배제' || echo " (배제 외 등장 없음 = PASS)"
-
-# ── 유지보수자 전용 (optional): 외부 매뉴얼 일관성 ──
-# 공개 배포본에는 매뉴얼이 없다. 매뉴얼 repo를 함께 관리하는 유지보수자 환경에서만 실행된다.
-MANUAL=~/VSCodeWorkspace/multi-agent-manual/multi-agent-manual.txt
-MANUAL_CLAUDE=~/VSCodeWorkspace/multi-agent-manual/CLAUDE.md
-if [ -f "$MANUAL" ]; then
-  echo "[유지보수자] INV5 매뉴얼 섹션 수 vs manual-repo CLAUDE.md (두 숫자 같아야; design-basis 현재값=10)"
-  grep -nE '^[0-9]{1,2}\. ' "$MANUAL" | grep -viE 'brief에|task.md의|log.md에'
-  grep -cE '^[0-9]{1,2}\. ' "$MANUAL_CLAUDE"
-  echo "[유지보수자] INV1/4/6/7/8 매뉴얼 측 일치"
-  grep -l 'tasks-only' "$MANUAL"
-  grep -rn '1500자\|1200자' "$MANUAL"
-  grep -n 'approved_at: <YYYY-MM-DD HH:MM>' "$MANUAL"   # 출력 없어야 PASS
-  grep -liE '권위 우선순위|CLAUDE.md가 가장 높|문서가 충돌' "$MANUAL"
-  grep -lin 'worktree\|배경\|백그라운드\|background session' "$MANUAL"
-else
-  echo "(외부 매뉴얼 없음 — 유지보수자 전용 점검 건너뜀. 공개 설치본은 정상.)"
-fi
+bash _shared/check-invariants.sh              # 핵심 INV1~15 전부 판정. 하나라도 FAIL → exit 비0 (커밋 금지)
+bash _shared/check-invariants.sh --self-test  # 러너 자체 검증: 불변식을 하나씩 깨뜨린 fixture 사본이 FAIL하는지
 ```
+
+- 이 문서의 표(정의)와 러너(판정)가 어긋나면 **표에 맞춰 러너를 고친다** — 표가 정의 정본, 러너가 판정 정본.
+- 불변식을 추가·변경하면 러너에 해당 판정과 self-test fixture를 함께 추가한다.
+- 유지보수자 전용 점검(외부 매뉴얼 INV5·generator 템플릿 INV12e/f·sync drift)은 해당 자산이 있을 때만 돌고 **WARN**으로 보고한다(exit 영향 없음). INV5는 R3 미해소 동안 의도적 불일치 가능. 매뉴얼 경로 override = `MULTIAGENT_MANUAL_DIR`.
 
 ## 전면 재감사가 필요한 경우 (이 점검으로 부족)
 

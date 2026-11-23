@@ -6,6 +6,8 @@
 - **Claude Code 세션** → "A. Claude Orchestrator" 섹션 + `backends.json` `orchestrators.claude`
 - **Codex 세션** → "B. Codex Orchestrator" 섹션 + `backends.json` `orchestrators.codex`
 
+능력 슬롯과 호스트별 배정은 `_shared/capability-profile.md`를 따른다.
+
 > 워커풀 정본은 항상 `_shared/backends.json`. 디스패처(`call_worker.sh`)는 호출 시
 > `MULTIAGENT_ORCH=<self>` 를 받아 `orchestrators[self].workers[role]` 만 본다.
 
@@ -16,40 +18,36 @@
 ### Decision Tree
 
 ```
-작업 성격 파악
+작업 성격 파악 → 능력 슬롯 → 담당 워커 (배정 정본: capability-profile.md)
 │
-├── 메인 코딩 / 디버깅 / 기획 · 설계 · 요구사항 · 전략 · 문서화?
+├── [strategist] 기획 · 설계 · 아키텍처 · 요구사항 · 전략 · UI/UX 디자인 방향
+│   · 문체가 중요한 글쓰기 · 까다로운 로직 설계 · 디버깅 원인 분석?
 │   └── claude-main
 │
-├── claude-main 산출물 리뷰 / 비판적 검증?      (교차 벤더 — Codex가 비평)
-│   └── codex-critic
-│
-├── 보조 구현 / 코드 분석 / 테스트 / 이미지 생성?
+├── [engineer] 대규모 구현 · 리팩토링 · 테스트 작성·실행 · diff · 로컬 CLI 검증 · 이미지 생성?
 │   └── codex-main
 │
-├── 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
+├── [computer-use] 브라우저 조작 · 복잡한 도구 워크플로우 자동화?
+│   └── codex-main
+│
+├── [reviewer] 산출물 리뷰 / 비판적 검증?
+│   └── codex-critic   (Codex의 주된 역할)
+│
+├── [multimodal] 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
 │   └── gemini
 │
 └── 판단 어려움?
     └── claude-main으로 시작 후 필요 시 추가
 ```
 
-**복합 작업 우선순위**
-1. **선행 의존성 우선**: codex-critic은 리뷰 대상(보통 claude-main 결과)이 먼저 있어야 함.
-2. **Orchestrator 내부 추론 우선**: 별도 worker 호출 전에 자체 추론으로 가능한지 먼저 판단. claude-main도 비용·쿼터 대상.
-3. **검증은 한 번만**: codex-critic은 작업당 1회 원칙. 재호출은 검증 실패 시만.
-4. **gemini는 명시적 트리거 시만**.
+### 복합 작업 우선순위
 
-**교차 벤더 비평**: Claude가 오케스트레이터일 때 비평은 **codex-critic**(다른 벤더)에게 맡긴다.
-같은 벤더 자기검수(claude-critic)는 이 섹션에서 쓰지 않는다.
+한 작업이 여러 분기에 해당할 때:
 
-### 최소 Worker Set
-| 작업 유형 | 권장 최소 set |
-|----------|------------|
-| 문서/기획만 · 코드 구현 | claude-main |
-| 구현 + 비평 | claude-main → codex-critic → claude-main (반영) |
-| 보조 구현 / 이미지 생성 | codex-main |
-| 대용량 문서/이미지 | gemini |
+1. **선행 의존성 우선**: codex-critic은 리뷰 대상(보통 claude-main 결과)이 먼저 있어야 함 → 해당 산출물 뒤에 호출
+2. **Orchestrator 내부 추론 우선**: 별도 worker 호출 전에 orchestrator 자체 추론으로 해결 가능한지 먼저 판단. 그래도 부족할 때만 claude-main 호출 (claude-main도 비용·쿼터 대상)
+3. **검증은 한 번만**: codex-critic은 작업당 1회 원칙. 재호출은 검증 실패 시만
+4. **gemini는 명시적 트리거 시만**: 멀티모달 또는 "제3자 시각의 검토 필요" 명시 없으면 호출 금지
 
 ---
 
@@ -58,41 +56,36 @@
 ### Decision Tree
 
 ```
-작업 성격 파악
+작업 성격 파악 → 능력 슬롯 → 담당 (배정 정본: capability-profile.md)
 │
-├── 현재 Codex Orchestrator가 직접 처리 가능한 단일 작업?
-│   └── worker 호출 없이 진행
+├── [engineer·computer-use] 현재 Codex Orchestrator가 직접 처리 가능한
+│   구현 · 테스트 · 로컬 검증 · 브라우저 조작 단일 작업?
+│   └── worker 호출 없이 진행 (두 슬롯의 기본 담당 = Orchestrator 자신)
 │
-├── 구현 / 코드 분석 / 테스트 / diff / 로컬 검증 / 이미지 생성이 크고 분리 가능?
+├── [engineer] 구현 / 코드 분석 / 테스트 / diff / 로컬 검증 / 이미지 생성이 크고 분리 가능?
 │   └── codex-main
 │
-├── Codex 또는 codex-main 산출물의 독립 리뷰 / 비판적 검증?   (교차 벤더 — Claude가 비평)
+├── [strategist] 설계 · UI/UX 디자인 · 전략 · 문체가 중요한 산출물?
+│   └── Orchestrator가 생성 → 완성 후 claude-critic 품질 게이트 권장
+│      (critic은 리뷰 대상 산출물이 먼저 있어야 함 — 최초 생성에 직접 라우팅 금지)
+│
+├── [reviewer] 산출물의 독립 리뷰 / 비판적 검증?
 │   └── claude-critic
 │
-├── 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
+├── [multimodal] 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
 │   └── gemini
 │
 └── 판단 어려움?
     └── Orchestrator가 먼저 범위를 좁히고, 필요한 worker만 사용자 승인 후 추가
 ```
 
-**복합 작업 우선순위**
-1. **Orchestrator 우선**: 별도 worker 호출 전에 현재 Codex 세션의 추론·로컬 도구로 해결 가능한지 판단.
-2. **최소 worker set**: 필요한 worker만 고른다.
+### 복합 작업 우선순위
+
+1. **Orchestrator 우선**: 별도 worker 호출 전에 현재 Codex 세션의 추론·로컬 도구로 해결 가능한지 판단한다.
+2. **최소 worker set**: 필요한 worker만 고른다. 모든 worker를 기본 호출하지 않는다.
 3. **선행 의존성 우선**: `claude-critic`은 리뷰 대상 산출물 경로가 먼저 있어야 한다.
 4. **검증은 한 번만**: `claude-critic`은 작업당 1회 원칙. 재호출은 검증 실패나 입력 변경 시만.
-5. **gemini는 명시적 트리거 시만**.
-
-**교차 벤더 비평**: Codex가 오케스트레이터일 때 비평은 **claude-critic**(다른 벤더)에게 맡긴다.
-같은 벤더 자기검수(codex-critic)는 이 섹션에서 쓰지 않는다.
-
-### 최소 Worker Set
-| 작업 유형 | 권장 최소 set |
-|-----------|---------------|
-| 작고 명확한 구현/문서 | worker 없음, Orchestrator 직접 처리 |
-| 분리 가능한 구현/검증 | codex-main |
-| 구현 + 독립 비평 | codex-main → claude-critic |
-| 대용량 문서/이미지 | gemini |
+5. **gemini는 명시적 트리거 시만**: 멀티모달, 긴 문서, 또는 제3자 관점 필요가 명확할 때만.
 
 ---
 
@@ -122,11 +115,13 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 | Worker | 활성 오케스트레이터 | 호출 방식 |
 |--------|------------------|----------|
 | claude-main | claude | Claude Code 내장 Task tool, `subagent_type: claude-main` (호출 인자 `model` 생략, 에이전트의 `model: inherit` 적용) |
-| codex-main | claude | `mcp__codex__codex` MCP (cli 폴백). claude일 때 보조 구현. |
-| codex-main | codex | 현재 Codex 환경의 native sub-agent/worker. |
-| codex-critic | claude | `mcp__codex__codex` MCP, `sandbox: read-only`, 비평 모드. |
-| claude-critic | codex | 승인된 Claude CLI (`claude -p`). 비평 모드, 쓰기 없음. |
-| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값, 폴백 api. 폐기 프록시 브리지 사용 금지. |
+| codex-main | claude | `MULTIAGENT_ORCH=claude bash _shared/adapters/call_worker.sh codex-main <brief-file>` → `codex exec`, workspace-write. |
+| codex-main | codex | 네이티브 서브에이전트. 승인 후 `gate.sh`를 먼저 실행하고 호출 인자에 모델은 넣지 않는다. |
+| codex-critic | claude | `MULTIAGENT_ORCH=claude bash _shared/adapters/call_worker.sh codex-critic <brief-file>` → `codex exec`, read-only. |
+| claude-critic | codex | `MULTIAGENT_ORCH=codex bash _shared/adapters/call_worker.sh claude-critic <brief-file>`. 비평 모드, 쓰기 없음. |
+| gemini | claude·codex | `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh gemini <brief-file>` (결과 JSON envelope). 백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값. 폐기 프록시 브리지 사용 금지. |
+
+CLI 호출은 디스패처가 `gate.sh` 승인 검사와 `scope_check.sh` 사후 검사를 적용한다. 네이티브 호출은 오케스트레이터가 직접 `gate.sh`를 통과시킨 뒤 실행한다.
 
 ## Worker 파일 쓰기 (공통)
 
@@ -137,9 +132,9 @@ decision tree로 "누구를" 고른 뒤 "어떻게 엮을지" 고른다. **단�
 ## 모델 정책
 
 - **claude-main**: 호출한 Claude 세션에서 선택한 모델을 사용한다 (`.claude/agents/claude-main.md`의 `model: inherit`).
-- **codex-main / codex-critic**: 호출 인자에 모델을 지정하지 않는다. Codex의 네이티브 워커는 별도 서브에이전트 모델 설정이 없으면 호출한 세션 모델을 상속한다. Claude에서 별도로 실행하는 Codex(MCP·CLI)는 Codex 설정의 기본값을 쓴다.
+- **codex-main / codex-critic**: 호출 인자에 모델을 지정하지 않는다. Codex의 네이티브 워커는 별도 서브에이전트 모델 설정이 없으면 호출한 세션 모델을 상속한다. Claude에서 별도로 실행하는 `codex exec`는 Codex 설정의 기본값을 쓴다.
 - **claude-critic**: 승인된 Claude 도구의 현재 기본/별칭 모델. 버전 핀하지 않음.
-- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 모델은 agy 설정 기본값, 폴백 api. 근거: `_shared/learnings.md` · `design-basis.md` D4.
+- **gemini**: 백엔드 `agy` CLI (`backends.json` 정본), 모델은 agy 설정 기본값. 근거: `_shared/learnings.md` · `design-basis.md` D4.
 
 ## Worker 추가 조건
 - 이미 있는 worker 결과로 해결 가능하면 추가 호출 금지.

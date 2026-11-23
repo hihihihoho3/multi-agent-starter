@@ -3,6 +3,111 @@
 이 파일은 MultiAgent orchestration 시스템의 주요 변경을 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/), 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따른다.
 
+## [1.6.0] - 2026-10-23
+
+### Changed
+- **codex-main·codex-critic = `codex exec` (D15)** — `codex mcp-server`가 codex-cli 0.154.0 무렵 제거돼 MCP 경로를 없앴다.
+  디스패처 `call_worker.sh --out tasks/<task>/workers/<role>/envelope.json <role> <brief>`로 부르고(Claude Code Bash
+  `timeout: 600000`), 인자 계약은 그대로(codex-main `workspace-write`, codex-critic `read-only`, 승인 never, cwd=`tasks/<task>/`).
+- 디스패처: `--out` 요약 출력, 진행 한 줄(stderr), codex cwd git 저장소 사전 점검(exit 8).
+
+### Removed
+- `.mcp.json`(codex `mcp-server` 등록). INV15·validate C11이 재유입을 막는다.
+
+## [1.5.0] - 2026-09-06
+
+### Added
+- **집행층 코드화 (D14)** — `_shared/adapters/gate.sh`(worker 호출 사전 게이트, fail-closed: 승인·`[APPROVAL]`
+  로그·brief 위치/한도·외부 쓰기 조건 정확 일치·인터랙티브 세션) · `_shared/adapters/scope_check.sh`(write_scope
+  사후 검사, 보고만) · `_shared/reentry-check.sh`(재진입 status↔log 정합). 디스패처 자동 배선(역할 불일치 거부,
+  none/tasks-only는 cwd=루트, scope 위반은 폴백 없는 최종 실패). native/mcp 호출은 호출 전 gate.sh 실행(지침
+  Lifecycle 6). INV14 신설.
+
+### Changed
+- 승인 항목 스키마: 외부 쓰기 승인은 `target_repo`·`write_scope`를 brief와 같은 값으로 기록(approval-policy).
+
+## [1.4.0] - 2026-07-24
+
+### Fixed
+- **codex sandbox 실행계약 모순 교정** — `backends.json`의 codex-main이 `read-only`로
+  선언돼 routing.md(`workspace-write` 고정)·CLAUDE.md 쓰기 정책 표(tasks/ 내부 직접 작성)와
+  모순되던 드리프트 수정. codex-main = `workspace-write`, codex-critic = `read-only`로
+  통일하고 CLI 폴백에도 `--sandbox`·`cwd_policy: target` 명시. 근거: design-basis D10.
+- **gemini api 폴백 비활성** — 미구현 스텁(`gemini_api.sh`, 무조건 exit 4)이 fallbacks에
+  등록돼 "폴백 있음"이라는 거짓 안전신호를 내던 문제. fallbacks에서 제거(구현 후 재등록).
+
+### Added
+- **INV13(backends 실행계약 정합)** — codex sandbox 계약·gemini 폴백 비활성을 jq 기반
+  PASS/FAIL로 자가점검. codex MCP stale 시 `codex exec` 헤드리스 폴백 절차를 routing.md에 정본화.
+- **불변식 자가점검 러너 `_shared/check-invariants.sh`** — 자가점검을 "grep 눈 판독"에서
+  exit-code 판정으로 전환(false PASS 방지). `--self-test` = 불변식을 하나씩 깨뜨린 fixture가
+  FAIL하는지 러너 자체 검증. system-invariants.md의 수동 스크립트 블록 대체.
+- **디스패처 payload 동봉** — `call_worker.sh <role> <brief> [payload]` + `--merged-preview`.
+  gemini 소스 검토 자료를 brief 인라인 대신 `sources/gemini-packet.md`로 동봉(디스패처 결합) —
+  brief 불변식(inline 금지·1200자)과의 모순 해소. design-basis D13.
+- backends.json에서 디스패처가 읽지 않는 선언(`write_policy`·`non_interactive`) 제거
+  (희망사항 config = 거짓 안전신호 방지, D11 후속).
+
+### Changed
+- **design-basis 결정 번호 재정렬** — 라우팅 2층 분리 D9→D12, backends 실행계약 D10→D11.
+  결정 번호를 유지보수자 루트 정본과 공유하기 위함(설치본 범위 밖 결정 D9·D10은 결번 표기).
+- **v1.3.0 개편 때 누락된 상세 규칙 복원** — gemini 이미지/PDF 검수 단일 정본 경로(필독 절)·
+  새 작업 폴더 생성 게이트 상세(orchestrator-rules §3·task-folder 안내)·worker-brief의
+  gemini 경로 주석 등 유지보수자 루트에만 남아 있던 규칙을 재수록.
+
+## [1.3.0] - 2026-07-13
+
+### Added
+- **라우팅 2층 분리 — `_shared/capability-profile.md` 신설(가변층)** — 능력 슬롯
+  (strategist·engineer·computer-use·reviewer·multimodal) → 담당 워커 배정의 정본.
+  신모델 출시·판정 변경 시 프로필만 갱신(근거·날짜 필수, 이력 append-only) — routing.md의
+  슬롯 정의는 불변. 근거: design-basis D9 (2026-07-13 외부 리뷰 10건 종합 판정).
+- **computer-use 슬롯 신설** — 브라우저 조작·도구 워크플로우 자동화를 독립 라우팅
+  (현 배정: codex-main).
+
+### Changed
+- routing.md decision tree를 슬롯 기반으로 재편 — strategist(기획·설계·디자인·전략·문체)
+  = claude-main, engineer(대규모 구현·테스트) = codex-main. 종전 "메인 코딩=claude-main,
+  보조 구현=codex-main" 구도에서 무게중심 이동. 최소 worker set 표 동기화.
+- validate에 C5b(2층 라우팅: routing→profile 참조 + 슬롯 5종) 추가, C1에 프로필 포함.
+
+## [1.2.2] - 2026-07-04
+
+### Fixed
+- **gemini 워커 폴백 실패 사유 유실** — 디스패처(`call_worker.sh`)가 api 폴백의 필수 env
+  (`GEMINI_API_KEY`) 부재 시 실패 사유 없이 죽던 문제를 에러 envelope 반환으로 수정,
+  호출 시작 시 폴백 불가 사전 경고 추가.
+
+### Changed
+- routing.md gemini — 소스·다중파일 검토 인라인 필수(agy 헤드리스 300s 타임아웃 실측),
+  폴백 조건(`GEMINI_API_KEY`) 명문화, 시간 제한 작업 전 경량 스모크 권장.
+
+## [1.2.1] - 2026-07-03
+
+### Fixed
+- **gemini(agy) 워커 프롬프트 미전달 수정** — Antigravity CLI 1.0.16에서 `-p` 단축 플래그가
+  제거되어 backends.json의 `args_template: ["-p", …]`가 프롬프트를 조용히 무시(모델 미호출·사용량 0).
+  `["--prompt", …]`로 교정. 증상: gemini 워커가 온보딩 인사만 반환.
+
+## [1.2.0] - 2026-06-28
+
+### Added
+- **opt-in goal 요금가드 배선(`--with-guard`)** — 설치 시 `--with-guard`를 주면 `.claude/settings.json`에
+  Stop 훅(`coach --hook`)이 주입된다. `/goal` 자율 루프가 주간 사용량 한도에 닿으면 자동 정지(루프
+  중에만 — `stop_hook_active` 게이트). 기본 미설치, 런타임 on/off=`coach guard on/off`. 정책은 `coach`
+  (usage-coach, codexbar 의존)가 갖고 미설치·조회실패는 fail-open(작업 안 죽임).
+
+## [1.1.0] - 2026-06-10
+
+카파시(Karpathy) 4원칙을 층별로 도입. 기존 규칙과 충돌 없음(보강).
+
+### Added
+- **CLAUDE.md "운영 원칙 (Operating Principles)" 섹션** — 4원칙(Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution) verbatim 차용 + 층별 적용 규칙. Orchestrator 전용 풀버전.
+- **`_templates/worker-brief.md` "Worker 행동 규약" 고정 블록** — 워커층 번역형: ②③ 그대로, ①은 가정 명시·표면화(워커는 one-shot이라 사용자 질문 채널 없음), ④는 오케스트레이터 전용.
+- **`_templates/worker-result.md` 체크리스트 항목** — "가정·불일치가 Issues/Caveats에 표면화됨".
+- **design-basis D8 / system-invariants INV12** — 층별 적용 결정 명문화 + 자가점검.
+- **`NOTICE`** — 출처·라이선스 표기 (multica-ai/andrej-karpathy-skills, MIT 선언·LICENSE 파일 부재).
+
 ## [1.0.1] - 2026-06-01
 
 모델·추론 정책 표기 정리(문서 patch). 동작 변경 없음.

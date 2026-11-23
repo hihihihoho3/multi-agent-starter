@@ -3,6 +3,12 @@
 <!-- HARD LIMIT: 1200자 한글 / 240단어 영문 (wc -m / wc -w). 파일 내용 inline 금지. 경로만 전달. -->
 <!-- worker가 추론할 수 있는 것은 쓰지 말 것. -->
 
+## Worker 행동 규약 (고정 — 모든 brief에 그대로 유지, 삭제 금지)
+
+- 요청 범위만 최소로. 사변적 추상화·기능 추가 금지
+- 외과수술식 수정: 기존 스타일 유지, 무관 코드 비접촉
+- 사용자 대화 채널 없음: 가정은 명시하고, 불확실·불일치는 result의 Issues/Caveats에 표면화
+
 ## Execution Context (codex-main / codex-critic 필수)
 
 ```yaml
@@ -22,6 +28,10 @@ write_scope: none             # none | tasks-only | "src/**, tests/**" 등 패�
 task:    tasks/<task-name>/task.md
 context: tasks/<task-name>/context.md
 sources: tasks/<task-name>/sources/<file>
+# gemini 이미지/PDF 검수: 분석 대상의 절대경로를 본문에 직접 적는다(아래 예).
+# image: /absolute/path/to/thumb.png   ← agy가 본문 경로를 열어 본다. --add-dir 쓰지 말 것.
+# gemini 소스·다중파일 검토: 스니펫을 brief에 넣지 말고 sources/gemini-packet.md에 담아
+# 디스패처 3번째 인자로 동봉한다: call_worker.sh gemini <brief> <packet> (routing.md gemini 절)
 ```
 
 ## Constraints

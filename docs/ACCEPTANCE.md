@@ -45,12 +45,12 @@
 
 | flavor | 오케스트레이터 | 필요한 워커 백엔드 |
 |--------|----------------|--------------------|
-| claude | Claude Code 세션 | `codex` MCP(`mcp__codex`), `agy`(PATH), (선택) `GEMINI_API_KEY` |
+| claude | Claude Code 세션 | `codex` CLI(PATH, `codex exec` — 설치 폴더 git 저장소), `jq`, `agy`(PATH), (선택) `GEMINI_API_KEY` |
 | codex | Codex 세션 | `claude` CLI(PATH), `agy`(PATH) |
 | antigravity | `agy`/Antigravity IDE (Gemini 3.1 Pro High) | `claude` CLI, `codex` CLI (PATH) |
+| dual | 같은 폴더에서 Claude Code 또는 Codex | 호스트별 네이티브 워커와 `codex exec` / `claude` CLI, `agy` |
 
-> Gemini 워커는 `agy`에 모델을 지정하지 않는다. 대화형 `agy`에서 `/model`로 선택한 값은 사용자 설정에 저장되어 다음 워커 호출에도 적용된다. 실행 시 `--model`로만 지정한 값은 그 세션에만 적용된다.
-> Codex 워커에도 모델을 지정하지 않는다. 네이티브 워커는 별도 서브에이전트 모델 설정이 없으면 호출한 세션 모델을 상속하고, 별도 Codex 실행(MCP·CLI)은 Codex 설정의 기본값을 사용한다.
+> Gemini 워커는 `agy`에 모델을 지정하지 않는다. `/model`로 저장한 모델이 다음 호출에도 적용된다. Codex 네이티브 워커는 별도 설정이 없으면 세션 모델을 따르고, `codex exec`는 Codex 설정의 기본값을 사용한다.
 
 ### A1. 설치 (세 경로 중 택1) + 즉시 검증
 - [ ] **generator**: `python3 plugins/multi-agent-starter/skills/configure-multiagent/generator/init.py --flavor <X> --target <DIR> --yes` → 설치 후 validate 자동 실행
@@ -124,7 +124,7 @@
 > **2026-06-03 검증 기록** (로컬, generator 경로):
 > - **L1 구조**: 3 flavor 모두 `validate` PASS(claude 10 / codex 11 / antigravity 12), `tests/run.sh` ALL PASS.
 > - **L2 스모크**: 3 flavor 모두 생성 폴더를 해당 호스트에서 열어 "규칙 요약" 시 지침 자동 로드 + 승인게이트·log태그·컨텍스트한도·워커풀·외부쓰기4조건을 정확히 답함.
->   - claude: `CLAUDE.md`, codex 워커 = **MCP**(`mcp__codex`, 프로젝트 `.mcp.json` 동봉).
+>   - claude: `CLAUDE.md`, codex 워커 = **MCP**(`mcp__codex`, 프로젝트 `.mcp.json` 동봉). *(v3.7.0에서 폐기 → `codex exec` 디스패처 경유, D15)*
 >   - codex: `AGENTS.md`, 워커 = claude-critic·gemini (codex-critic 비활성).
 >   - antigravity: `AGENTS.md`, codex 워커 = **CLI**(`codex exec`). **실증**: Antigravity는 프로젝트-로컬 `.mcp.json`을 안 읽고 전역 `~/.gemini/antigravity-ide/mcp_config.json`만 봄 → CLI 기본이 유일한 zero-config 경로(설계 확정). codex MCP 전환은 그 전역 파일에 등록하는 1회성 업그레이드.
 > - **⚠️ 미검증**: L3 기능(실제 워커 호출·전체 라이프사이클), L4 수동 안전(승인게이트 *행동*·write_scope) — L4 자동분(디스패처 폴백/타임아웃/가드)은 `tests/`로 PASS. plugin/zip 설치경로(마켓플레이스는 머지 후), 호스트별 최종 승인.

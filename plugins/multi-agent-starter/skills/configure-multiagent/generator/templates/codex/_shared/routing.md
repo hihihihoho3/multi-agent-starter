@@ -1,20 +1,32 @@
 # Worker Routing Rules
 
+## 2층 라우팅 — 안정층/가변층
+
+이 파일의 decision tree는 **작업 유형 → 능력 슬롯**을 정한다(안정층 — 모델 세대가 바뀌어도 유효).
+**슬롯 → 담당 배정**의 정본은 `_shared/capability-profile.md`(가변층)다.
+신모델 출시·판정 변경 시 **프로필만 갱신**한다 — 이 파일의 슬롯 정의는 손대지 않는다.
+아래 트리의 담당명은 현 프로필 배정의 병기(편의 사본)다 — 프로필과 어긋나면 **프로필이 이긴다**.
+
 ## Decision Tree
 
 ```
-작업 성격 파악
+작업 성격 파악 → 능력 슬롯 → 담당 (배정 정본: capability-profile.md)
 │
-├── 현재 Codex Orchestrator가 직접 처리 가능한 단일 작업?
-│   └── worker 호출 없이 진행
+├── [engineer·computer-use] 현재 Codex Orchestrator가 직접 처리 가능한
+│   구현 · 테스트 · 로컬 검증 · 브라우저 조작 단일 작업?
+│   └── worker 호출 없이 진행 (두 슬롯의 기본 담당 = Orchestrator 자신)
 │
-├── 구현 / 코드 분석 / 테스트 / diff / 로컬 검증 / 이미지 생성이 크고 분리 가능?
+├── [engineer] 구현 / 코드 분석 / 테스트 / diff / 로컬 검증 / 이미지 생성이 크고 분리 가능?
 │   └── codex-main
 │
-├── Codex 또는 codex-main 산출물의 독립 리뷰 / 비판적 검증?
+├── [strategist] 설계 · UI/UX 디자인 · 전략 · 문체가 중요한 산출물?
+│   └── Orchestrator가 생성 → 완성 후 claude-critic 품질 게이트 권장
+│      (critic은 리뷰 대상 산출물이 먼저 있어야 함 — 최초 생성에 직접 라우팅 금지)
+│
+├── [reviewer] 산출물의 독립 리뷰 / 비판적 검증?
 │   └── claude-critic
 │
-├── 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
+├── [multimodal] 이미지 · 스크린샷 분석 / 50페이지+ 문서 / 제3자 시각의 검토?
 │   └── gemini
 │
 └── 판단 어려움?
@@ -51,7 +63,8 @@
 
 ### codex-main
 
-- **용도**: 보조 구현, 코드베이스 분석, 리팩토링, 테스트 작성, diff 생성, 로컬 CLI 검증, 이미지 생성.
+- **슬롯**: engineer (크고 분리 가능한 작업 — 기본 담당은 Orchestrator 자신)
+- **용도**: 크고 분리 가능한 구현, 코드베이스 분석, 리팩토링, 테스트 작성, diff 생성, 로컬 CLI 검증, 이미지 생성.
 - **결과물**: 코드, diff, 테스트 결과, CLI 출력, 이미지 파일.
 - **호출 방식**: 현재 Codex 환경에서 제공되는 sub-agent/worker 기능을 사용한다. 외부 `codex` CLI나 별도 Codex bridge를 직접 실행해야 한다면 먼저 사용자 승인을 받는다.
 - **brief 필수 필드**:
@@ -67,6 +80,7 @@ write_scope: none | tasks-only | "src/**, tests/**"
 
 ### claude-critic
 
+- **슬롯**: reviewer (+ strategist 품질 게이트 — 산출은 Orchestrator, 판단만 게이트)
 - **용도**: Codex Orchestrator 또는 `codex-main` 산출물의 독립 리뷰·비평. 실현 가능성, 테스트 커버리지, 사이드 이펙트, 누락 요구사항을 adversarial하게 점검한다.
 - **선행 조건**: 리뷰 대상 산출물 경로가 존재해야 한다. 대상은 `codex-main result.md`, Orchestrator 작성 문서, 기존 코드·문서·소스 등 brief에 명시된 파일일 수 있다.
 - **결과물**: 중요도별 비평 리스트, 수정 제안, 수락/보류 판단 근거.
@@ -76,17 +90,20 @@ write_scope: none | tasks-only | "src/**, tests/**"
 
 ### gemini
 
+- **슬롯**: multimodal
 - **용도**: 이미지/스크린샷/다이어그램 분석, 50페이지 이상 문서 스캔, 제3자 시각의 검토.
 - **결과물**: 분석 텍스트, 요약, 검토 의견.
-- **호출 방식**: `_shared/backends.json`의 `gemini`가 정본 — 백엔드 = Antigravity `agy` CLI, 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>`(결과 JSON envelope). 모델은 agy 설정 기본값, 폴백 `api`. 옛 `mcp__gemini-pro__*` 프록시 브리지 폐기.
+- **호출 방식**: `_shared/backends.json`의 `gemini`가 정본 — 백엔드 = Antigravity `agy` CLI, 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>`(결과 JSON envelope). 모델은 agy 사용자 설정을 따름, 폴백 없음(아래 폴백 조건). 옛 `mcp__gemini-pro__*` 프록시 브리지 폐기.
+- **소스·다중파일 검토는 packet 동봉 필수**: 소스 코드 발굴·검토를 시킬 땐 **디렉토리나 다수 파일 순회를 시키지 말 것** — agy 헤드리스가 300s 타임아웃(exit 124)으로 실패한다(2026-07-04 실측, 자료 동봉 재호출 = 27s exit 0). 필요한 스니펫은 brief에 인라인하지 말고(brief 한도·inline 금지 유지) `tasks/<task>/sources/gemini-packet.md`에 담아 **디스패처 3번째 인자로 동봉**한다: `call_worker.sh gemini <brief> <packet>` — 디스패처가 brief 뒤에 "동봉 자료" 헤더로 결합(`--merged-preview`로 사전 확인). brief에는 "동봉 자료만 사용, 파일 열지 말 것"을 명시. 단일 이미지/PDF 경로 참조는 예외. 시간 제한 작업에서 gemini에 의존하기 전 경량 스모크 1회로 가용성부터 확인.
+- **폴백 조건**: api 폴백 슬롯(`adapters/gemini_api.sh`)은 **미구현·비활성**(키가 있어도 무조건 exit 4). backends.json `fallbacks`에서 제거됨(거짓 안전신호 방지). agy(primary) 실패 시 폴백 없이 실패한다(사유는 envelope `stderr_sanitized`). Gemini REST 호출 구현 후에만 fallbacks 재등록.
 - **쓰기 권한**: 없음. Orchestrator가 응답을 `result.md`에 기록한다.
 
 ## 모델 정책
 
 - **Codex Orchestrator**: 현재 Codex 세션의 모델과 reasoning 설정을 따른다.
-- **codex-main**: 네이티브 워커 호출에 `model`을 넘기지 않는다. 별도 서브에이전트 모델 설정이 없으면 호출한 Codex 세션의 모델을 상속한다.
+- **codex-main**: 호출에 `model`을 넘기지 않는다. 별도 서브에이전트 모델 설정이 없으면 현재 Codex 세션 모델을 상속한다.
 - **claude-critic**: 승인된 Claude 도구의 현재 기본/별칭 모델을 사용한다. 버전 문자열은 환경 소유 사실이므로 repo에 핀하지 않는다.
-- **gemini**: 백엔드 = Antigravity `agy` CLI(`backends.json` 정본), 모델은 agy 설정 기본값. 옛 `mcp__gemini-pro__*` 브리지 폐기.
+- **gemini**: `agy` CLI에 모델을 넘기지 않고 `/model`로 저장된 사용자 설정을 따른다.
 
 ## 최소 Worker Set
 

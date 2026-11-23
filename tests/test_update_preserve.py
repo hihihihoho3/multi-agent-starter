@@ -11,24 +11,21 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 GEN = REPO / "plugins" / "multi-agent-starter" / "skills" / "configure-multiagent" / "generator"
-FLAVOR = "claude"  # update 동작은 flavor 무관 — 대표로 claude
-
-
-def init(tgt: Path) -> subprocess.CompletedProcess:
+def init(tgt: Path, flavor: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(GEN / "init.py"),
-         "--flavor", FLAVOR, "--target", str(tgt), "--yes", "--no-validate"],
+         "--flavor", flavor, "--target", str(tgt), "--yes", "--no-validate"],
         capture_output=True, text=True,
     )
 
 
-def main() -> None:
+def check_update(flavor: str) -> int:
     fails = 0
     with tempfile.TemporaryDirectory() as d:
         tgt = Path(d) / "sys"
-        if init(tgt).returncode != 0:
-            print("  FAIL 초기 init")
-            sys.exit(1)
+        if init(tgt, flavor).returncode != 0:
+            print(f"  FAIL [{flavor}] 초기 init")
+            return 1
 
         # 사용자 데이터 심기
         ut = tgt / "tasks" / "my-task"
@@ -41,9 +38,24 @@ def main() -> None:
         # 시스템 파일 변조(update가 되돌리는지)
         (tgt / "_shared" / "routing.md").write_text("STALE", encoding="utf-8")
 
-        if init(tgt).returncode != 0:  # update 모드
-            print("  FAIL update init")
-            sys.exit(1)
+        # 지침파일에 loadout store 블록 심기(update가 보존하는지 — v3.4 결함 수정)
+        block = ("<!-- store:no-yesman:start -->\n"
+                 "예스맨 금지 규칙 본문\n"
+                 "<!-- store:no-yesman:end -->")
+        names = ("CLAUDE.md", "AGENTS.md") if flavor == "dual" else ("CLAUDE.md",)
+        for name in names:
+            instr = tgt / name
+            before = instr.read_text(encoding="utf-8")
+            instr.write_text(before + "\n" + block + "\n", encoding="utf-8")
+
+        # 옛 설치본(v3.6.0 이하)의 codex MCP 등록 + 사용자 서버 1개 심기 — update가 codex만 걷어내는지(D15)
+        mcp = tgt / ".mcp.json"
+        mcp.write_text('{"mcpServers": {"codex": {"type": "stdio", "command": "codex", '
+                       '"args": ["mcp-server"]}, "mine": {"command": "x"}}}', encoding="utf-8")
+
+        if init(tgt, flavor).returncode != 0:  # update 모드
+            print(f"  FAIL [{flavor}] update init")
+            return 1
 
         checks = [
             ("tasks/my-task/task.md 보존",
@@ -52,11 +64,26 @@ def main() -> None:
              (ul / "learnings.md").read_text(encoding="utf-8") == "LOCAL"),
             ("_shared/routing.md 갱신",
              (tgt / "_shared" / "routing.md").read_text(encoding="utf-8") != "STALE"),
+            (".mcp.json codex mcp-server 제거·다른 서버 보존",
+             mcp.is_file() and "mcp-server" not in mcp.read_text(encoding="utf-8")
+             and '"mine"' in mcp.read_text(encoding="utf-8")),
+            (".mcp.json 원본 백업",
+             (tgt / ".mcp.json.multiagent-bak").is_file()),
         ]
+        for name in names:
+            bak = tgt / (name + ".multiagent-bak")
+            checks += [
+                (f"{name} store 블록 보존", block in (tgt / name).read_text(encoding="utf-8")),
+                (f"{name} 덮어쓰기 전 백업 생성", bak.is_file() and block in bak.read_text(encoding="utf-8")),
+            ]
         for desc, ok in checks:
-            print(f"  {'PASS' if ok else 'FAIL'} {desc}")
+            print(f"  {'PASS' if ok else 'FAIL'} [{flavor}] {desc}")
             fails += not ok
+    return fails
 
+
+def main() -> None:
+    fails = sum(check_update(flavor) for flavor in ("claude", "dual"))
     print(f"test_update_preserve: {'all pass' if not fails else f'{fails} fail'}")
     sys.exit(1 if fails else 0)
 

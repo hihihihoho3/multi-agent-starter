@@ -23,6 +23,8 @@ tasks/<task-name>/
 
 ### Step 1: 작업 폴더 + 필수 파일
 
+> 새 폴더가 기존 작업의 후속·핸드오프·하위 단계라면 생성 전에 `_shared/orchestrator-rules.md` §3 "새 작업 폴더 생성 게이트"를 먼저 적용한다(사용자 확인 + parent/context/메모리 연결).
+
 ```bash
 TASK=my-task-name
 ROOT=<설치한-폴더>
@@ -90,24 +92,10 @@ wc -w "$ROOT/tasks/$TASK/workers/$ROLE/brief.md"   # 영문 단어수 ≤ 240
 
 #### 5-3. worker 호출 (`_shared/routing.md`의 호출 명령 참조)
 
-- **claude-main**: Claude Code 내장 **Task tool (sub-agent)** 호출
-  - `subagent_type`: `claude-main` (`.claude/agents/claude-main.md`에 정의)
-  - `prompt`: brief.md 내용 그대로
-  - `model`: 호출 인자에서 생략한다. 에이전트의 `model: inherit`가 Claude 세션 모델을 따른다.
-  - 응답 텍스트를 Orchestrator가 받아 `result.md`에 기록
-- **gemini**: `_shared/backends.json`의 `gemini`(백엔드 = Antigravity `agy` CLI, 모델은 agy 설정 기본값). 디스패처 `bash _shared/adapters/call_worker.sh gemini <brief-file>` → JSON envelope. Orchestrator가 envelope의 stdout을 `result.md`에 기록. (옛 `mcp__gemini-pro__*` 브리지 폐기)
-- **codex-main / codex-critic**: `mcp__codex__codex` MCP 도구 호출
-  - `prompt`: brief.md 내용 그대로
-  - `cwd`:
-    - codex-main 기본: `<설치한-폴더>/tasks/<task>/` (작업 폴더 안에서 산출물 작성)
-    - codex-main 외부 쓰기 4조건 충족 시: brief.md의 `target_repo` 값
-    - codex-critic: brief.md의 `target_repo` 값 (비평 대상 repo 컨텍스트)
-  - `sandbox`:
-    - codex-main: `workspace-write` 고정 (cwd 내부만 쓰기 가능. 외부 repo 쓰기는 cwd를 `target_repo`로 변경한 경우에만 해당 패턴 내 쓰기)
-    - codex-critic: `read-only` 고정
-  - `approval-policy`: `on-failure` 권장
-- **codex-main 외부 repo 쓰기 조건**: `target_repo` + `write_scope` 명시 + `task.md`의 `workers_approved`에 외부 쓰기 승인 기록 + `log.md`에 `[APPROVAL]` 별도 기록 (4개 모두 충족 시에만 cwd를 `target_repo`로 변경)
-- 위 조건 미충족 시 cwd는 작업 폴더로 두고, codex-main이 `tasks/<task>/artifacts/`에 diff·patch 형태로 산출. 사용자가 직접 적용
+- **Claude 호스트의 claude-main**: `bash _shared/adapters/gate.sh <brief-file>` 통과 후 네이티브 호출. `model` 인자는 생략해 세션 모델을 따른다.
+- **Codex 호스트의 codex-main**: 승인 검사 통과 후 네이티브 호출. 별도 서브에이전트 설정이 없으면 호출 세션의 모델을 쓴다.
+- **CLI 워커**: `MULTIAGENT_ORCH=<self> bash _shared/adapters/call_worker.sh <role> <brief-file>`로 호출한다. Claude 호스트의 Codex 워커는 `codex exec`, Codex 호스트의 claude-critic은 `claude` CLI, 양쪽 Gemini는 `agy`를 사용한다. 디스패처가 승인·쓰기 범위를 검사한다.
+- 호출 전에 현재 호스트의 `_shared/routing.md` 섹션과 `_shared/capability-profile.md` 워커 배정을 확인한다.
 
 #### 5-4. result.md 생성
 **worker 응답을 받은 후** 생성 (사전 빈 파일 생성 금지):

@@ -23,7 +23,7 @@ FLAVOR = {
         "instruction": "CLAUDE.md",
         "main_worker": "claude-main",          # routing에 있어야
         "forbidden_worker": None,
-        "extra_files": [".claude/agents/claude-main.md", ".mcp.json"],
+        "extra_files": [".claude/agents/claude-main.md"],
     },
     "codex": {
         "instruction": "AGENTS.md",
@@ -33,29 +33,55 @@ FLAVOR = {
     },
     "antigravity": {
         "instruction": "AGENTS.md",            # agy가 자동 로드(spike S1 확인)
-        "main_worker": "claude-main",          # 메인 코더(교차 벤더)
+        "main_worker": "claude-main",          # strategist 워커(교차 벤더) — routing에 있어야
         "forbidden_worker": "gemini-critic",   # gemini 오케스트레이터 자기검수 금지
         "extra_files": [],
     },
-    # dual: 두 오케스트레이터(claude+codex)를 한 설치본에. 단일-flavor 가정과 스키마가
-    # 달라(backends v2: orchestrators{}) run_checks 대신 전용 run_dual_checks 로 분기한다.
-    # 이 항목은 argparse --flavor choices 노출용 자리표시자.
     "dual": {
         "instruction": "CLAUDE.md",
-        "main_worker": None,
+        "main_worker": "claude-main",
         "forbidden_worker": None,
-        "extra_files": [],
+        "extra_files": ["AGENTS.md", ".claude/agents/claude-main.md"],
     },
 }
 
-# dual backends v2: 각 오케스트레이터가 반드시 가져야 할 워커 키(>= 부분집합).
-DUAL_REQUIRED_WORKERS = {
+DUAL_WORKERS = {
     "claude": {"claude-main", "codex-main", "codex-critic", "gemini"},
     "codex": {"codex-main", "claude-critic", "gemini"},
 }
 
 TOPOLOGY = ("Pipeline", "Fan-out/Fan-in", "Expert Pool", "Producer-Reviewer")
+SLOTS = ("strategist", "engineer", "computer-use", "reviewer", "multimodal")
 LOG_TAGS = "DECISION | WORKER_CALL | VERIFICATION | ERROR | APPROVAL | COMPLETE"
+
+# knot 자동층(v3.0.0부터 loadout 카탈로그가 주입). 미설치(마커 부재)는 정상 PASS.
+KNOT_BLOCK = SCRIPT_DIR / "knot_block.md"
+KNOT_START, KNOT_END = "<!-- knot:start -->", "<!-- knot:end -->"
+# knot 능동 스킬은 v3.1.0부터 knot 자체 플러그인(github.com/netwaif/knot)이 배포 — 이 저장소·생성물
+# 검증 대상 아님. C10(관리블록 정본)만 사후 검사한다.
+
+
+# goal 요금가드: v3.2.0부터 배선 자산·사후검증(구 C12) 전부 loadout guard 품목 소관
+# (설치=loadout store.py, 검증=loadout doctor 정본 대조). 이 저장소는 가드 파일을 갖지 않는다.
+
+
+def _knot_check(instr_txt: str) -> tuple[bool, str]:
+    """C10: knot 마커가 있으면 (a)짝 맞고 (b)본문이 knot_block.md와 일치하고
+    (c)중복 마커 없음. 마커가 없으면 PASS(미설치 정상)."""
+    starts, ends = instr_txt.count(KNOT_START), instr_txt.count(KNOT_END)
+    if starts == 0 and ends == 0:
+        return True, "knot 마커 없음(미설치 — 정상)"
+    if starts != 1 or ends != 1:
+        return False, f"knot 마커 짝/중복 오류(start={starts}, end={ends})"
+    m = re.search(re.escape(KNOT_START) + r".*?" + re.escape(KNOT_END), instr_txt, re.S)
+    if not m:
+        return False, "knot 마커 순서 오류(start가 end보다 뒤)"
+    if not KNOT_BLOCK.is_file():
+        return False, "knot_block.md 없음(정본 부재)"
+    canonical = KNOT_BLOCK.read_text(encoding="utf-8").strip("\n")
+    if m.group(0).strip("\n") != canonical:
+        return False, "knot 블록 본문이 knot_block.md와 불일치"
+    return True, "knot 블록 정본 일치"
 
 
 def read(target: Path, rel: str) -> str | None:
@@ -75,10 +101,12 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     # C1 필수 파일 존재
     required = [
         instr, ".gitignore", "tasks/.gitkeep",
-        "_shared/routing.md", "_shared/orchestrator-rules.md",
+        "_shared/routing.md", "_shared/capability-profile.md",
+        "_shared/orchestrator-rules.md",
         "_shared/design-basis.md", "_shared/system-invariants.md",
-        "_templates/log.md", "_templates/context.md", "_templates/worker-brief.md",
+        "_shared/check-invariants.sh",
         "_shared/adapters/_deansi.py",
+        "_templates/log.md", "_templates/context.md", "_templates/worker-brief.md",
     ] + cfg["extra_files"]
     missing = [r for r in required if not (target / r).is_file()]
     check(not missing, f"C1 필수 파일 존재 (없음: {missing or '-'})")
@@ -86,6 +114,9 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     routing = read(target, "_shared/routing.md") or ""
     orch = read(target, "_shared/orchestrator-rules.md") or ""
     instr_txt = read(target, instr) or ""
+    instructions = [instr_txt]
+    if flavor == "dual":
+        instructions.append(read(target, "AGENTS.md") or "")
     log_tpl = read(target, "_templates/log.md") or ""
     brief_tpl = read(target, "_templates/worker-brief.md") or ""
 
@@ -97,14 +128,32 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     check(("1500" in ctx) and ("1200" in brief_tpl), "C3 한도 수치 1500/1200")
 
     # C4 재진입 프로토콜 (orchestrator-rules + 지침파일 양쪽)
-    reentry = ("재진입 프로토콜" in orch) and (("재진입" in instr_txt) or ("re-entry" in instr_txt.lower()))
+    reentry = ("재진입 프로토콜" in orch) and all(
+        "재진입" in instruction or "re-entry" in instruction.lower() for instruction in instructions
+    )
     check(reentry, "C4 재진입 프로토콜 (orchestrator-rules + 지침파일)")
 
     # C5 토폴로지 4패턴
     miss_topo = [t for t in TOPOLOGY if t not in routing]
     check(not miss_topo, f"C5 토폴로지 4패턴 (없음: {miss_topo or '-'})")
 
-    # C6 gemini 정책. claude/codex: gemini 워커가 cli/agy. antigravity: 오케스트레이터가
+    # C5b 2층 라우팅 — routing(안정층) 트리가 각 슬롯을 분기 태그([slot], [a·b] 허용)로 갖고,
+    # capability-profile(가변층)의 「현재 배정」 표가 슬롯당 정확히 1행. substring 우연 일치로는
+    # PASS 못 하게 구조 검사. (담당명 대응까지는 비교하지 않음 — 배정 서술은 자유 산문이라
+    # 기계 대조가 과제약. 병기 동기화는 프로필 갱신 절차가 소관)
+    profile = read(target, "_shared/capability-profile.md") or ""
+    tree_tokens: set[str] = set()
+    for m in re.finditer(r"\[([^\]\n]+)\]", routing):
+        tree_tokens.update(t.strip() for t in m.group(1).split("·"))
+    miss_tree = [s for s in SLOTS if s not in tree_tokens]
+    row_counts = {s: len(re.findall(rf"^\|\s*{re.escape(s)}\s*\|", profile, re.M)) for s in SLOTS}
+    bad_rows = [f"{s}×{n}" for s, n in row_counts.items() if n != 1]
+    link_ok = "capability-profile" in routing
+    check(link_ok and not miss_tree and not bad_rows,
+          f"C5b 2층 라우팅 (routing→profile 참조: {'OK' if link_ok else '없음'}, "
+          f"트리 슬롯 태그 누락: {miss_tree or '-'}, 프로필 배정행 이상: {bad_rows or '-'})")
+
+    # C6 gemini 정책. claude/codex/dual: gemini 워커가 cli/agy. antigravity: 오케스트레이터가
     # agy(Gemini Pro High)이므로 별도 gemini 워커 없음 — 지침이 agy/pro-high 오케스트레이터를 명시하는지.
     if flavor == "antigravity":
         c6_ok = ("Gemini 3.1 Pro High" in instr_txt) and (("agy" in instr_txt) or ("Antigravity" in instr_txt))
@@ -113,7 +162,9 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
         c6_ok, c6_why = _gemini_policy_ok(read(target, "_shared/backends.json"))
     check(c6_ok, f"C6 gemini 정책 {('— ' + c6_why) if not c6_ok else '(OK)'}")
 
-    # C6b antigravity 전용: 워커셋이 {claude-main,codex-main,codex-critic}이고 gemini 워커 호출 잔재 없음
+    # C6b antigravity 전용: 워커셋이 정확히 {claude-main,codex-main,codex-critic}이고
+    # gemini 워커 호출 잔재 없음. subset 검사는 워커 누락(예: codex-critic 빠짐)을 통과시키므로
+    # 정확집합으로 조인다. (schema 1 'workers' 맵 기준 — 스키마 전환 아님)
     if flavor == "antigravity":
         try:
             ws = set((json.loads(read(target, "_shared/backends.json") or "{}").get("workers") or {}).keys())
@@ -121,11 +172,12 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
             ws = set()
         tf = read(target, "_templates/task-folder.md") or ""
         no_gem = all("call_worker.sh gemini" not in t for t in (routing, tf, instr_txt))
-        set_ok = (ws <= {"claude-main", "codex-main", "codex-critic"}) and ("claude-main" in ws)
-        check(no_gem and set_ok, f"C6b 워커셋 {sorted(ws)} + gemini 워커 호출 잔재 없음")
+        set_ok = ws == {"claude-main", "codex-main", "codex-critic"}
+        check(no_gem and set_ok,
+              f"C6b 워커셋 {sorted(ws)} == 정확집합 {{claude-main,codex-main,codex-critic}} + gemini 워커 호출 잔재 없음")
 
     # C7 write_scope 값 일관 (tasks-only 가 지침/routing/brief에 존재)
-    ws = all("tasks-only" in t for t in (instr_txt, routing, brief_tpl))
+    ws = all("tasks-only" in t for t in (*instructions, routing, brief_tpl))
     check(ws, "C7 write_scope tasks-only 분포 (지침/routing/brief)")
 
     # C8 flavor 워커풀 일관성
@@ -140,122 +192,32 @@ def run_checks(target: Path, flavor: str) -> list[tuple[bool, str]]:
     check(not problems, f"C9 backends.json 스키마 (문제: {problems[0] if problems else '-'})")
     check((target / "_shared/adapters/call_worker.sh").is_file(),
           "C9b 디스패처 _shared/adapters/call_worker.sh 존재")
-    # C9c agy Windows 어댑터 핸들링 (CRLF 제거 B + winpty/held-stdin C + _deansi.py D)
-    disp = read(target, "_shared/adapters/call_worker.sh") or ""
-    agy_h = ("a%$'\\r'" in disp) and ("winpty" in disp) and ("_deansi.py" in disp)
-    check(agy_h, "C9c agy Windows 핸들링 (CRLF 제거 + winpty + _deansi.py)")
+    # C9c 집행층 스크립트 (gate·scope_check·reentry-check) 존재 + 디스패처 배선
+    enf = ["_shared/adapters/gate.sh", "_shared/adapters/scope_check.sh", "_shared/reentry-check.sh"]
+    enf_missing = [e for e in enf if not (target / e).is_file()]
+    cw = read(target, "_shared/adapters/call_worker.sh") or ""
+    cw_code = "\n".join(l for l in cw.splitlines() if not l.lstrip().startswith("#"))
+    check(not enf_missing and 'bash "$SCRIPT_DIR/gate.sh"' in cw_code and 'bash "$SCRIPT_DIR/scope_check.sh"' in cw_code,
+          f"C9c 집행층 스크립트·배선 (없음: {enf_missing or '-'})")
+
+    # C10 knot 자동층(선택). 마커 부재 = 미설치 정상 PASS, 존재 시 짝·정본·중복 검사.
+    for instruction in instructions:
+        k_ok, k_why = _knot_check(instruction)
+        check(k_ok, f"C10 knot 관리블록 — {k_why}")
+
+    # C11 codex 워커 = codex exec (D15). codex mcp-server는 codex-cli 0.154.0 무렵 제거 — 등록·호출 잔재 금지.
+    c11 = _codex_exec_problems(read(target, "_shared/backends.json"))
+    tf = read(target, "_templates/task-folder.md") or ""
+    if any("mcp__codex__" in t for t in (routing, tf, *instructions)):
+        c11.append("routing/task-folder/지침에 mcp__codex__ 호출 잔존")
+    mcp = read(target, ".mcp.json")
+    if mcp is not None and "mcp-server" in mcp:
+        c11.append(".mcp.json에 codex mcp-server 등록 잔존")
+    check(not c11, f"C11 codex 워커 codex exec·MCP 잔재 없음 (문제: {c11[0] if c11 else '-'})")
+
+    # (구 C12 요금가드 배선 검증은 v3.2.0부터 loadout doctor 소관 — 정본 이관)
 
     return results
-
-
-def run_dual_checks(target: Path) -> list[tuple[bool, str]]:
-    """dual flavor 전용 점검 — 두 오케스트레이터(claude+codex) 합본 + backends v2.
-
-    단일-flavor run_checks 의 가정(top-level .workers, 단일 instruction)이 dual엔 안 맞아
-    별도 점검 경로로 둔다. 기존 flavor 점검 로직은 건드리지 않는다."""
-    results: list[tuple[bool, str]] = []
-
-    def check(ok: bool, msg: str) -> None:
-        results.append((bool(ok), msg))
-
-    # D1 필수 파일 (두 지침 + 공유 + claude native 자원 + 디스패처)
-    required = [
-        "CLAUDE.md", "AGENTS.md", ".gitignore", "tasks/.gitkeep",
-        "_shared/routing.md", "_shared/orchestrator-rules.md",
-        "_shared/design-basis.md", "_shared/system-invariants.md", "_shared/backends.json",
-        "_templates/log.md", "_templates/context.md", "_templates/worker-brief.md",
-        ".claude/agents/claude-main.md", ".mcp.json",
-        "_shared/adapters/call_worker.sh", "_shared/adapters/gemini_api.sh",
-        "_shared/adapters/_deansi.py",
-    ]
-    missing = [r for r in required if not (target / r).is_file()]
-    check(not missing, f"D1 필수 파일 존재 (없음: {missing or '-'})")
-
-    routing = read(target, "_shared/routing.md") or ""
-    orch = read(target, "_shared/orchestrator-rules.md") or ""
-    claude_md = read(target, "CLAUDE.md") or ""
-    agents_md = read(target, "AGENTS.md") or ""
-    log_tpl = read(target, "_templates/log.md") or ""
-    brief_tpl = read(target, "_templates/worker-brief.md") or ""
-    ctx = read(target, "_templates/context.md") or ""
-    dispatcher = read(target, "_shared/adapters/call_worker.sh") or ""
-
-    # D2 log 태그 6종
-    check(LOG_TAGS in log_tpl, "D2 log 태그 6종 (_templates/log.md)")
-    # D3 한도 수치
-    check(("1500" in ctx) and ("1200" in brief_tpl), "D3 한도 수치 1500/1200")
-    # D4 재진입 프로토콜 (orchestrator-rules + 두 지침 양쪽 포인터)
-    reentry = ("재진입 프로토콜" in orch) and ("재진입" in claude_md) and \
-        (("재진입" in agents_md) or ("re-entry" in agents_md.lower()))
-    check(reentry, "D4 재진입 프로토콜 (orchestrator-rules + CLAUDE.md + AGENTS.md)")
-    # D5 토폴로지 4패턴
-    miss_topo = [t for t in TOPOLOGY if t not in routing]
-    check(not miss_topo, f"D5 토폴로지 4패턴 (없음: {miss_topo or '-'})")
-    # D6 write_scope tasks-only (두 지침 + routing + brief)
-    ws = all("tasks-only" in t for t in (claude_md, agents_md, routing, brief_tpl))
-    check(ws, "D6 write_scope tasks-only 분포 (CLAUDE/AGENTS/routing/brief)")
-    # D7 두 오케스트레이터 섹션 자기인식
-    self_aware = ("Claude Orchestrator" in routing) and ("Codex Orchestrator" in routing) \
-        and ("자기인식" in orch)
-    check(self_aware, "D7 두 오케스트레이터 섹션 + 자기인식 (routing/orchestrator-rules)")
-    # D8 디스패처 네임스페이스 인식
-    check(("orchestrators[" in dispatcher) and ("MULTIAGENT_ORCH" in dispatcher),
-          "D8 디스패처 네임스페이스 인식 (orchestrators[ns] + MULTIAGENT_ORCH)")
-    # D9 backends v2 스키마 + 양 오케스트레이터 워커 레코드
-    raw = read(target, "_shared/backends.json")
-    problems = _dual_backends_problems(raw, target) if raw is not None else ["backends.json 없음"]
-    check(not problems, f"D9 backends v2 스키마 (문제: {problems[0] if problems else '-'})")
-    # D10 교차 벤더: 양쪽 main+critic 이 routing 에 문서화
-    check(all(w in routing for w in ("claude-main", "codex-main", "codex-critic", "claude-critic")),
-          "D10 양 오케스트레이터 워커(main+critic) routing 문서화")
-    # D11 디스패처 + gemini api 어댑터 존재
-    check((target / "_shared/adapters/call_worker.sh").is_file(),
-          "D11 디스패처 _shared/adapters/call_worker.sh 존재")
-    # D12 agy Windows 어댑터 핸들링 (CRLF 제거 B + winpty/held-stdin C + _deansi.py D)
-    agy_ok = ("a%$'\\r'" in dispatcher) and ("winpty" in dispatcher) and ("_deansi.py" in dispatcher)
-    check(agy_ok, "D12 agy Windows 핸들링 (CRLF 제거 + winpty + _deansi.py)")
-    return results
-
-
-def _dual_backends_problems(raw: str, target: Path) -> list[str]:
-    try:
-        data = json.loads(raw)
-    except Exception as e:  # noqa: BLE001
-        return [f"JSON 파싱 실패: {e}"]
-    if "mcp__gemini__gemini_" in raw:
-        return ["폐기 도구 호출형 mcp__gemini__gemini_* 잔존"]
-    p: list[str] = []
-    if not data.get("schema_version"):
-        p.append("schema_version 누락")
-    if data.get("flavor") != "dual":
-        p.append(f"flavor 불일치(파일={data.get('flavor')}, 기대=dual)")
-    if data.get("active") not in ("claude", "codex"):
-        p.append(f"active 무효(claude|codex 이어야, 파일={data.get('active')})")
-    orchs = data.get("orchestrators")
-    if not isinstance(orchs, dict):
-        return p + ["orchestrators 객체 없음"]
-    for ns in ("claude", "codex"):
-        o = orchs.get(ns)
-        if not isinstance(o, dict):
-            p.append(f"orchestrators.{ns} 없음"); continue
-        if not o.get("instruction"):
-            p.append(f"orchestrators.{ns}.instruction 누락")
-        workers = o.get("workers")
-        if not isinstance(workers, dict) or not workers:
-            p.append(f"orchestrators.{ns}.workers 비어있음"); continue
-        miss = DUAL_REQUIRED_WORKERS[ns] - set(workers.keys())
-        if miss:
-            p.append(f"orchestrators.{ns}.workers 누락 {sorted(miss)}")
-        for role, rec in workers.items():
-            if not isinstance(rec, dict):
-                p.append(f"{ns}.{role}: 레코드 형식 오류"); continue
-            p += _backend_record_problems(rec, f"{ns}.{role}", target, is_fallback=False)
-        g = workers.get("gemini")
-        if isinstance(g, dict):
-            cli = g.get("cli", {})
-            if g.get("call_type") != "cli" or cli.get("command") != "agy":
-                p.append(f"{ns}.gemini: call_type cli·command agy 아님")
-    return p
 
 
 _CALL_TYPES = {"native", "mcp", "cli", "api"}
@@ -308,18 +270,74 @@ def _backend_record_problems(rec: dict, where: str, target: Path, *, is_fallback
     return p
 
 
+_CODEX_SANDBOX = {"codex-main": "workspace-write", "codex-critic": "read-only"}
+
+
+def _worker_pools(data: dict) -> dict[str, dict]:
+    if data.get("flavor") != "dual":
+        return {"": data.get("workers")}
+    hosts = data.get("orchestrators")
+    if not isinstance(hosts, dict):
+        return {}
+    return {
+        host: record.get("workers") if isinstance(record, dict) else None
+        for host, record in hosts.items()
+    }
+
+
+def _codex_exec_problems(raw: str | None) -> list[str]:
+    """C11: backends의 codex-main/codex-critic(있는 것만 — codex flavor의 native codex-main은 오케스트레이터
+    자신이라 제외)이 `codex exec --sandbox <계약값>`·approval never·폴백/MCP 없음인지."""
+    try:
+        pools = _worker_pools(json.loads(raw or "{}"))
+    except Exception as e:  # noqa: BLE001
+        return [f"backends 파싱 실패: {e}"]
+    return [
+        f"{host}: {issue}" if host else issue
+        for host, workers in pools.items() if isinstance(workers, dict)
+        for issue in _codex_pool_problems(workers)
+    ]
+
+
+def _codex_pool_problems(workers: dict) -> list[str]:
+    p: list[str] = []
+    for role, sb in _CODEX_SANDBOX.items():
+        w = workers.get(role)
+        if not isinstance(w, dict) or w.get("call_type") == "native":
+            continue
+        args = (w.get("cli") or {}).get("args_template") or []
+        if w.get("call_type") != "cli" or (w.get("cli") or {}).get("command") != "codex" or args[:1] != ["exec"]:
+            p.append(f"{role}: codex exec CLI 아님"); continue
+        if "--sandbox" not in args or args[args.index("--sandbox") + 1:][:1] != [sb]:
+            p.append(f"{role}: --sandbox {sb} 아님")
+        if "approval_policy=never" not in args:
+            p.append(f"{role}: approval_policy=never 없음")
+        if "mcp" in w or w.get("fallbacks"):
+            p.append(f"{role}: mcp 레코드/폴백 잔존")
+    return p
+
+
 def _gemini_policy_ok(raw: str | None) -> tuple[bool, str]:
-    """C6: gemini 워커가 cli/agy를 사용하는지 검사."""
+    """C6: 호스트별 Gemini 워커가 사용자 모델 설정으로 agy를 실행하는지 검사."""
     if raw is None:
         return False, "backends.json 없음"
     try:
-        g = (json.loads(raw).get("workers") or {}).get("gemini")
+        pools = _worker_pools(json.loads(raw))
     except Exception as e:  # noqa: BLE001
         return False, f"파싱 실패: {e}"
-    if not isinstance(g, dict):
+    if not pools:
         return False, "gemini 워커 없음"
-    if g.get("call_type") != "cli" or g.get("cli", {}).get("command") != "agy":
-        return False, "gemini call_type cli·command agy 아님"
+    for host, workers in pools.items():
+        gemini = workers.get("gemini") if isinstance(workers, dict) else None
+        if not isinstance(gemini, dict) or gemini.get("call_type") != "cli":
+            return False, f"{host} gemini 워커가 CLI 아님"
+        cli = gemini.get("cli") or {}
+        if cli.get("command") != "agy":
+            return False, f"{host} gemini CLI가 agy 아님"
+        if gemini.get("model") != "agy-default" or any(
+            arg.split("=", 1)[0] in ("--model", "-m") for arg in cli.get("args_template", [])
+        ):
+            return False, f"{host} gemini가 사용자 모델 설정을 따르지 않음"
     return True, ""
 
 
@@ -335,17 +353,31 @@ def _backends_problems(raw: str, flavor: str, target: Path) -> list[str]:
         p.append("schema_version 누락")
     if data.get("flavor") != flavor:
         p.append(f"flavor 불일치(파일={data.get('flavor')}, 기대={flavor})")
-    workers = data.get("workers")
-    if not isinstance(workers, dict) or not workers:
-        return p + ["workers 비어있음"]
-    for role, rec in workers.items():
-        if not isinstance(rec, dict):
-            p.append(f"{role}: 레코드 형식 오류"); continue
-        p += _backend_record_problems(rec, role, target, is_fallback=False)
+    pools = _worker_pools(data)
+    if flavor == "dual":
+        if data.get("schema_version") != "2" or set(pools) != set(DUAL_WORKERS):
+            p.append("dual 스키마 2 및 Claude/Codex 워커풀이 필요함")
+        if data.get("active") not in DUAL_WORKERS:
+            p.append("dual active는 claude 또는 codex여야 함")
+    for host, workers in pools.items():
+        if not isinstance(workers, dict) or not workers:
+            p.append(f"{host} workers 비어있음")
+            continue
+        if flavor == "dual" and set(workers) != DUAL_WORKERS.get(host):
+            p.append(f"{host} dual 워커셋 불일치: {sorted(workers)}")
+        for role, rec in workers.items():
+            where = f"{host}.{role}" if host else role
+            if not isinstance(rec, dict):
+                p.append(f"{where}: 레코드 형식 오류")
+                continue
+            p += _backend_record_problems(rec, where, target, is_fallback=False)
     return p
 
 
-REPO_ROOT = SCRIPT_DIR.parent  # validate.py는 generator/ 안 → 부모가 플러그인 repo 루트
+# 분리 레이아웃(#17066 대응): 플러그인 본체는 plugins/<name>/ 하위, 마켓 카탈로그는
+# git 루트(.claude-plugin/marketplace.json + .agents/plugins/marketplace.json)에 있다.
+PLUGIN_ROOT = SCRIPT_DIR.parents[2]   # generator → configure-multiagent → skills → 플러그인 루트
+CATALOG_ROOT = SCRIPT_DIR.parents[4]  # git 루트 (카탈로그·front-page)
 
 
 def _desc_text(rel: str, data: dict) -> str:
@@ -372,9 +404,11 @@ def _versions_with_holes(rel: str, data: dict) -> list:
     return [data.get("version")]
 
 
-def run_repo_checks(repo: Path) -> list[tuple[str, str]]:
+def run_repo_checks(catalog: Path, plugin: Path) -> list[tuple[str, str]]:
     """플러그인 repo 자체(배포 표면) 점검 — 생성 타깃이 아니라 매니페스트·레이아웃.
 
+    분리 레이아웃: 카탈로그(marketplace.json 2종)는 git 루트(catalog), 플러그인
+    매니페스트(plugin.json 2종)·skills/ 는 plugins/<name>/(plugin) 하위.
     PASS/FAIL/WARN 3-state. 루트 plugin.json(Antigravity 호스트)은 로딩 경로
     미확정이라 부재 시 WARN(KNOWN_ISSUES KI-2). 머지 전 실설치로 검증."""
     out: list[tuple[str, str]] = []
@@ -382,39 +416,66 @@ def run_repo_checks(repo: Path) -> list[tuple[str, str]]:
     def emit(status: str, msg: str) -> None:
         out.append((status, msg))
 
-    # 동봉 매니페스트(보장 호스트): Claude Code marketplace+plugin, Codex plugin
-    manifests = [
-        ".claude-plugin/marketplace.json",
-        ".claude-plugin/plugin.json",
-        ".codex-plugin/plugin.json",
-    ]
+    # 동봉 매니페스트(보장 호스트): Claude Code marketplace(루트 카탈로그)+plugin, Codex plugin.
+    # 라벨은 git 루트 기준 상대경로 — 아래에서 catalog / rel 로 읽는다.
+    mkt_rel = ".claude-plugin/marketplace.json"
+    plugin_rels = [str((plugin / d / "plugin.json").relative_to(catalog))
+                   for d in (".claude-plugin", ".codex-plugin")]
+    manifests = [mkt_rel] + plugin_rels
     loaded: dict[str, dict] = {}
     bad: list[str] = []
     for rel in manifests:
-        p = repo / rel
+        p = catalog / rel
         if not p.is_file():
             bad.append(f"{rel} 없음"); continue
         try:
             loaded[rel] = json.loads(p.read_text(encoding="utf-8"))
         except Exception as e:  # noqa: BLE001
             bad.append(f"{rel} JSON 파싱 실패({e})")
-    # R1 구조까지: marketplace plugins[] 비어있지 않고 각 항목 name·source·version, plugin.json은 name·version
-    mkt = loaded.get(".claude-plugin/marketplace.json", {})
+    # R1 구조까지: marketplace plugins[] 비어있지 않고 각 항목 name·source·version
+    # (로컬 "./" source는 실제 폴더 존재까지), plugin.json은 name·version
+    mkt = loaded.get(mkt_rel, {})
     mkt_plugins = mkt.get("plugins") or []
-    if ".claude-plugin/marketplace.json" in loaded:
+    if mkt_rel in loaded:
         if not mkt_plugins:
             bad.append("marketplace.plugins 비어있음")
         for i, pl in enumerate(mkt_plugins):
             miss = [k for k in ("name", "source", "version") if not (isinstance(pl, dict) and pl.get(k))]
             if miss:
                 bad.append(f"marketplace.plugins[{i}] 필드 누락{miss}")
-    for rel in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+            src = pl.get("source") if isinstance(pl, dict) else None
+            if isinstance(src, str) and src.startswith("./") and not (catalog / src).is_dir():
+                bad.append(f"marketplace.plugins[{i}] source 폴더 없음({src})")
+    for rel in plugin_rels:
         d = loaded.get(rel)
         if d is not None:
             miss = [k for k in ("name", "version") if not d.get(k)]
             if miss:
                 bad.append(f"{rel} 필드 누락{miss}")
     emit("PASS" if not bad else "FAIL", f"R1 매니페스트 3종 valid+구조 ({bad[0] if bad else '-'})")
+
+    # R1b Codex 카탈로그(.agents/plugins/marketplace.json) — Codex 호스트가 소비.
+    # 스키마에 version 필드가 없어 R2(version 일관) 대상에서는 제외한다.
+    ab: list[str] = []
+    agents_cat = catalog / ".agents/plugins/marketplace.json"
+    if not agents_cat.is_file():
+        ab.append(".agents/plugins/marketplace.json 없음")
+    else:
+        try:
+            apl = json.loads(agents_cat.read_text(encoding="utf-8")).get("plugins") or []
+            if not apl:
+                ab.append("plugins 비어있음")
+            for i, pl in enumerate(apl):
+                miss = [k for k in ("name", "source") if not (isinstance(pl, dict) and pl.get(k))]
+                if miss:
+                    ab.append(f"plugins[{i}] 필드 누락{miss}")
+                src = pl.get("source") if isinstance(pl, dict) else None
+                path = src.get("path") if isinstance(src, dict) else None
+                if isinstance(path, str) and path.startswith("./") and not (catalog / path).is_dir():
+                    ab.append(f"plugins[{i}] source.path 폴더 없음({path})")
+        except Exception as e:  # noqa: BLE001
+            ab.append(f"JSON 파싱 실패({e})")
+    emit("PASS" if not ab else "FAIL", f"R1b Codex 카탈로그(.agents) 구조 ({ab[0] if ab else '-'})")
 
     # R2 version 존재 + 일관 (누락 None 도 실패 — discard 금지)
     allv = [v for rel in manifests if rel in loaded for v in _versions_with_holes(rel, loaded[rel])]
@@ -425,7 +486,7 @@ def run_repo_checks(repo: Path) -> list[tuple[str, str]]:
     emit("PASS" if r2_ok else "FAIL", f"R2 매니페스트 version 존재+일관 ({why})")
 
     # R3 공용 스킬 + frontmatter: 선두 --- 블록 안에 name·description
-    skill = repo / "skills/configure-multiagent/SKILL.md"
+    skill = plugin / "skills/configure-multiagent/SKILL.md"
     skill_txt = skill.read_text(encoding="utf-8") if skill.is_file() else ""
     fm = re.match(r"^---\n(.*?)\n---\n", skill_txt, re.S)
     fm_body = fm.group(1) if fm else ""
@@ -452,7 +513,7 @@ def run_repo_checks(repo: Path) -> list[tuple[str, str]]:
              f"R4 flavor {tmpl_flavors} 전부 각 매니페스트/스킬 서술에 광고 (누락: {gaps or '-'})")
 
     # R5 루트 plugin.json(Antigravity 호스트) — 로딩 경로 미확정이라 부재 시 WARN
-    emit("PASS" if (repo / "plugin.json").is_file() else "WARN",
+    emit("PASS" if (catalog / "plugin.json").is_file() else "WARN",
          "R5 루트 plugin.json (Antigravity 호스트; 부재 시 KI-2 — 머지 전 실설치 검증)")
 
     return out
@@ -467,8 +528,8 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.repo_check:
-        rresults = run_repo_checks(REPO_ROOT)
-        print(f"  validate(repo): {REPO_ROOT}")
+        rresults = run_repo_checks(CATALOG_ROOT, PLUGIN_ROOT)
+        print(f"  validate(repo): {CATALOG_ROOT} (plugin: {PLUGIN_ROOT.relative_to(CATALOG_ROOT)})")
         failed = warned = 0
         for status, msg in rresults:
             print(f"   [{status}] {msg}")
@@ -488,7 +549,7 @@ def main() -> None:
     if not target.is_dir():
         sys.exit(f"[error] target 폴더 없음: {target}")
 
-    results = run_dual_checks(target) if args.flavor == "dual" else run_checks(target, args.flavor)
+    results = run_checks(target, args.flavor)
     print(f"  validate: flavor={args.flavor} target={target}")
     failed = 0
     for ok, msg in results:

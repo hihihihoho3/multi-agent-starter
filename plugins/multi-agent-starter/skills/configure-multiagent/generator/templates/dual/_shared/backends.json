@@ -11,41 +11,56 @@
         "claude-main": {
           "model": "host-default",
           "call_type": "native",
-          "native": { "subagent_type": "claude-main", "prompt_source": "brief" },
+          "native": {
+            "subagent_type": "claude-main",
+            "prompt_source": "brief"
+          },
           "approval_class": "worker",
           "result_capture": "orchestrator"
         },
         "codex-main": {
           "model": "codex-default",
-          "call_type": "mcp",
-          "mcp": {
-            "tool": "mcp__codex__codex",
-            "args_template": { "prompt": "@brief_content", "sandbox": "read-only", "approval-policy": "never" }
-          },
-          "brief_mode": "content",
+          "call_type": "cli",
+          "brief_mode": "stdin",
+          "timeout": 540,
           "approval_class": "worker",
-          "result_capture": "tool-return",
-          "timeout": 300,
-          "fallbacks": [
-            {
-              "model": "codex-default", "call_type": "cli", "brief_mode": "stdin", "timeout": 300,
-              "approval_class": "worker", "result_capture": "envelope",
-              "cli": { "command": "codex", "args_template": ["exec", "-"],
-                       "non_interactive": { "stdin": "brief", "no_tty": true, "on_permission_prompt": "fail" } }
-            }
-          ]
+          "result_capture": "envelope",
+          "cwd_policy": "task",
+          "cli": {
+            "command": "codex",
+            "args_template": [
+              "exec",
+              "--sandbox",
+              "workspace-write",
+              "-c",
+              "approval_policy=never",
+              "-"
+            ]
+          },
+          "fallbacks": [],
+          "fallback_note": "codex mcp-server는 codex-cli 0.154.0 무렵 제거됨 — MCP 경로·폴백 없음(design-basis D15). timeout 540s = Claude Code Bash 도구 상한(600s)보다 짧게 두어 envelope가 항상 돌아오게 함."
         },
         "codex-critic": {
           "model": "codex-default",
-          "call_type": "mcp",
-          "mcp": {
-            "tool": "mcp__codex__codex",
-            "args_template": { "prompt": "@brief_content", "sandbox": "read-only", "approval-policy": "never" }
-          },
-          "brief_mode": "content",
+          "call_type": "cli",
+          "brief_mode": "stdin",
+          "timeout": 540,
           "approval_class": "worker",
-          "result_capture": "tool-return",
-          "timeout": 300
+          "result_capture": "envelope",
+          "cwd_policy": "task",
+          "cli": {
+            "command": "codex",
+            "args_template": [
+              "exec",
+              "--sandbox",
+              "read-only",
+              "-c",
+              "approval_policy=never",
+              "-"
+            ]
+          },
+          "fallbacks": [],
+          "fallback_note": "codex mcp-server는 codex-cli 0.154.0 무렵 제거됨 — MCP 경로·폴백 없음(design-basis D15). timeout 540s = Claude Code Bash 도구 상한(600s)보다 짧게 두어 envelope가 항상 돌아오게 함."
         },
         "gemini": {
           "model": "agy-default",
@@ -53,22 +68,17 @@
           "brief_mode": "content",
           "cli": {
             "command": "agy",
-            "args_template": ["-p", "@brief_content"],
-            "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+            "args_template": [
+              "--prompt",
+              "@brief_content"
+            ]
           },
           "cwd_policy": "isolated_tmp",
-          "write_policy": "none",
           "approval_class": "worker",
           "result_capture": "envelope",
           "timeout": 300,
-          "fallbacks": [
-            {
-              "model": "gemini-3.1-pro-high", "call_type": "api", "timeout": 300,
-              "approval_class": "worker", "result_capture": "envelope",
-              "api": { "ref": "adapters/gemini_api.sh", "required_env": ["GEMINI_API_KEY"],
-                       "brief_pass": "arg1", "retry": { "max": 2, "backoff_s": 2 } }
-            }
-          ]
+          "fallbacks": [],
+          "fallback_note": "api 폴백 슬롯(adapters/gemini_api.sh)은 미구현(무조건 exit 4)이라 비활성 — 등록 시 거짓 안전신호(design-basis 결정 참조). REST 구현 후 재등록."
         }
       }
     },
@@ -78,7 +88,10 @@
         "codex-main": {
           "model": "codex-default",
           "call_type": "native",
-          "native": { "subagent_type": "codex-main", "prompt_source": "brief" },
+          "native": {
+            "subagent_type": "codex-main",
+            "prompt_source": "brief"
+          },
           "approval_class": "worker",
           "result_capture": "orchestrator"
         },
@@ -88,11 +101,12 @@
           "brief_mode": "content",
           "cli": {
             "command": "claude",
-            "args_template": ["-p", "@brief_content"],
-            "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+            "args_template": [
+              "--prompt",
+              "@brief_content"
+            ]
           },
           "cwd_policy": "isolated_tmp",
-          "write_policy": "none",
           "approval_class": "worker",
           "result_capture": "envelope",
           "timeout": 300
@@ -103,22 +117,17 @@
           "brief_mode": "content",
           "cli": {
             "command": "agy",
-            "args_template": ["-p", "@brief_content"],
-            "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+            "args_template": [
+              "--prompt",
+              "@brief_content"
+            ]
           },
           "cwd_policy": "isolated_tmp",
-          "write_policy": "none",
           "approval_class": "worker",
           "result_capture": "envelope",
           "timeout": 300,
-          "fallbacks": [
-            {
-              "model": "gemini-3.1-pro-high", "call_type": "api", "timeout": 300,
-              "approval_class": "worker", "result_capture": "envelope",
-              "api": { "ref": "adapters/gemini_api.sh", "required_env": ["GEMINI_API_KEY"],
-                       "brief_pass": "arg1", "retry": { "max": 2, "backoff_s": 2 } }
-            }
-          ]
+          "fallbacks": [],
+          "fallback_note": "api 폴백 슬롯(adapters/gemini_api.sh)은 미구현(무조건 exit 4)이라 비활성 — 등록 시 거짓 안전신호. REST 구현 후 재등록."
         }
       }
     }

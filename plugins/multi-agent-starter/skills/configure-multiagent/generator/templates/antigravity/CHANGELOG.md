@@ -2,6 +2,77 @@
 
 이 파일은 multi-agent-starter (Antigravity flavor) orchestration 시스템의 주요 변경을 기록한다.
 
+## [0.5.0] - 2026-10-23
+
+### Changed
+- codex-main·codex-critic 인자 계약 정렬: `codex exec --sandbox <workspace-write|read-only> -c approval_policy=never -`
+  (brief stdin, `cwd_policy: task` = cwd `tasks/<task>/`, 외부 쓰기 4조건 때만 target_repo). 종전엔 sandbox 미지정·cwd=루트.
+- 디스패처 공유본 갱신(`--out` 요약, 진행 한 줄, codex cwd git 사전 점검).
+
+## [0.4.0] - 2026-09-06
+
+### Added
+- **집행층 코드화 (D10)** — `_shared/adapters/gate.sh`(worker 호출 사전 게이트, fail-closed: 승인·`[APPROVAL]`
+  로그·brief 위치/한도·외부 쓰기 조건 정확 일치·인터랙티브 세션) · `_shared/adapters/scope_check.sh`(write_scope
+  사후 검사, 보고만) · `_shared/reentry-check.sh`(재진입 status↔log 정합). 디스패처 자동 배선(역할 불일치 거부,
+  none/tasks-only는 cwd=루트, scope 위반은 폴백 없는 최종 실패). native/mcp 호출은 호출 전 gate.sh 실행(지침
+  Lifecycle 6). INV14 신설.
+
+### Changed
+- 승인 항목 스키마: 외부 쓰기 승인은 `target_repo`·`write_scope`를 brief와 같은 값으로 기록(approval-policy).
+
+## [0.3.1] - 2026-07-24
+
+### Added
+- **불변식 자가점검 러너 `_shared/check-invariants.sh`** — exit-code 판정(false PASS 방지),
+  system-invariants.md 수동 스크립트 블록 대체.
+- **디스패처 payload 동봉** — `call_worker.sh <role> <brief> [payload]` + `--merged-preview`
+  (대용량 자료는 `sources/` packet으로 동봉, brief 불변식 유지). design-basis D9.
+
+### Fixed
+- backends.json에서 디스패처가 읽지 않는 선언(`write_policy`·`non_interactive`) 제거
+  (희망사항 config = 거짓 안전신호 방지).
+
+## [0.3.0] - 2026-07-13
+
+### Added
+- **라우팅 2층 분리 — `_shared/capability-profile.md` 신설(가변층)** — 능력 슬롯
+  (strategist·engineer·computer-use·reviewer·multimodal) → 담당 배정의 정본.
+  신모델 출시·판정 변경 시 프로필만 갱신(근거·날짜 필수, 이력 append-only) — routing.md의
+  슬롯 정의는 불변. 근거: design-basis D8 (2026-07-13 외부 리뷰 10건 종합 판정).
+- **computer-use 슬롯 신설** — 브라우저 조작·도구 워크플로우 자동화를 독립 라우팅
+  (현 배정: codex-main).
+
+### Changed
+- routing.md decision tree를 슬롯 기반으로 재편 — strategist(기획·설계·디자인·전략·문체)
+  = claude-main, engineer(대규모 구현·테스트) = codex-main, multimodal = Orchestrator 직접.
+- validate에 C5b(2층 라우팅: routing→profile 참조 + 슬롯 5종) 추가, C1에 프로필 포함.
+
+## [0.2.2] - 2026-07-04
+
+### Fixed
+- **gemini 워커 폴백 실패 사유 유실** — 디스패처(`call_worker.sh`)가 api 폴백의 필수 env
+  (`GEMINI_API_KEY`) 부재 시 실패 사유 없이 죽던 문제를 에러 envelope 반환으로 수정,
+  호출 시작 시 폴백 불가 사전 경고 추가.
+
+## [0.2.1] - 2026-07-03
+
+### Fixed
+- **gemini(agy) 워커 프롬프트 미전달 수정** — Antigravity CLI 1.0.16에서 `-p` 단축 플래그가
+  제거되어 backends.json의 `args_template: ["-p", …]`가 프롬프트를 조용히 무시(모델 미호출·사용량 0).
+  `["--prompt", …]`로 교정. 증상: gemini 워커가 온보딩 인사만 반환.
+
+## [0.2.0] - 2026-06-10
+
+카파시(Karpathy) 4원칙을 층별로 도입. 기존 규칙과 충돌 없음(보강).
+
+### Added
+- **AGENTS.md "Operating Principles" 섹션** — 4원칙 verbatim 차용 + 층별 적용 규칙(Orchestrator 전용 풀버전).
+- **`_templates/worker-brief.md` "Worker 행동 규약" 고정 블록** — 워커층 번역형: ②③ 그대로, ①은 가정 명시·표면화(워커는 one-shot이라 사용자 질문 채널 없음), ④는 오케스트레이터 전용.
+- **`_templates/worker-result.md` 체크리스트 항목** — "가정·불일치가 Issues/Caveats에 표면화됨".
+- **design-basis D7 / system-invariants INV11** — 층별 적용 결정 명문화 + 자가점검.
+- **`NOTICE`** — 출처·라이선스 표기 (multica-ai/andrej-karpathy-skills, MIT 선언·LICENSE 파일 부재).
+
 ## [0.1.0] - 2026-06-01
 
 multi-agent-starter를 기반으로 Antigravity Orchestrator 버전을 생성했다.

@@ -10,11 +10,12 @@
       "brief_mode": "content",
       "cli": {
         "command": "claude",
-        "args_template": ["-p", "@brief_content"],
-        "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+        "args_template": [
+          "--prompt",
+          "@brief_content"
+        ]
       },
       "cwd_policy": "repo_root",
-      "write_policy": "none",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600
@@ -22,14 +23,19 @@
     "codex-main": {
       "model": "codex-default",
       "call_type": "cli",
-      "brief_mode": "content",
+      "brief_mode": "stdin",
       "cli": {
         "command": "codex",
-        "args_template": ["exec", "@brief_content"],
-        "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+        "args_template": [
+          "exec",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "approval_policy=never",
+          "-"
+        ]
       },
-      "cwd_policy": "repo_root",
-      "write_policy": "none",
+      "cwd_policy": "task",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600
@@ -37,14 +43,19 @@
     "codex-critic": {
       "model": "codex-default",
       "call_type": "cli",
-      "brief_mode": "content",
+      "brief_mode": "stdin",
       "cli": {
         "command": "codex",
-        "args_template": ["exec", "@brief_content"],
-        "non_interactive": { "stdin": "/dev/null", "no_tty": true, "on_permission_prompt": "fail" }
+        "args_template": [
+          "exec",
+          "--sandbox",
+          "read-only",
+          "-c",
+          "approval_policy=never",
+          "-"
+        ]
       },
-      "cwd_policy": "repo_root",
-      "write_policy": "none",
+      "cwd_policy": "task",
       "approval_class": "worker",
       "result_capture": "envelope",
       "timeout": 600

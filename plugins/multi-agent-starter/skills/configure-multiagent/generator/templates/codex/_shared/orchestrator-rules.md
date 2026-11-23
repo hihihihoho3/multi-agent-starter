@@ -35,7 +35,7 @@ MultiAgent Orchestrator는 `<설치한-폴더>` 또는 그 하위에서 실행�
 
 이미 `tasks/<task>/`가 있는 작업을 다시 만질 때 적용한다.
 
-**1단계 — 재정박(re-anchor, 필수)**: 어떤 액션 전에도 먼저 읽는다.
+**1단계 — 재정박(re-anchor, 필수)**: 먼저 `bash _shared/reentry-check.sh tasks/<task>` 를 돌려 status↔log 정합과 역할별 brief/result/승인 표를 받는다(불일치면 아래 "status↔log 불일치" 분기부터). 그 다음 어떤 액션 전에도 먼저 읽는다.
 
 1. `task.md` — goal, status, workers_approved
 2. `context.md` — 현재 스냅샷
@@ -44,12 +44,13 @@ MultiAgent Orchestrator는 `<설치한-폴더>` 또는 그 하위에서 실행�
 
 **2단계 — 분기 판단**:
 
-- **status↔log 불일치 (다른 분기보다 먼저 적용)**: 아래 분기들은 status를 신뢰해 판단하므로, 불일치면 log를 정본으로 삼아 status를 정정하고 `[DECISION]`을 append한 뒤 정정된 status로 다시 분기 판단한다.
+- **status↔log 불일치 (다른 분기보다 먼저 적용)**: 아래 분기들은 status를 신뢰해 판단하므로, 불일치면(`reentry-check.sh` exit 11 — 검출만 하고 정정은 하지 않는다) log를 정본으로 삼아 status를 정정하고 `[DECISION]`을 append한 뒤 정정된 status로 다시 분기 판단한다.
 - **초기 실행**: brief/result가 없고 status가 `pending`이면 정상 라이프사이클 진행.
 - **응답 대기/지연**: status가 `waiting_<role>`이거나 log에 `[WORKER_CALL]`만 있고 result가 없으면 worker 지연/실패 여부를 먼저 확인.
 - **부분 재실행**: 특정 worker result만 미흡하면 그 worker만 재호출한다.
 - **기존 결과 개선**: 기존 result를 덮지 말고 `result-fix.md` 등으로 버전 보존. 현재 채택 result 경로를 `context.md`에 명시.
-- **새 입력**: 입력이 바뀌었으면 이전 산출물은 보존하고 새 result를 만든다. 범위가 다르면 새 작업 폴더를 만든다.
+- **새 입력**: 입력이 바뀌었으면 이전 산출물은 보존하고 새 result를 만든다. 범위가 다르면 새 작업 폴더를 만든다(단 아래 분리 게이트 적용).
+- **새 작업 폴더 생성 게이트 (분리·핸드오프·후속 단계) — 강제**: 기존 작업의 후속·핸드오프·하위 단계를 별도 폴더(경로 불문)로 분리하려면 먼저 사용자에게 폴더 구조(분리 여부·폴더명)를 확인·승인받는다. done 작업이라도 자동 분리 금지 — 사용자가 폴더를 봐야 알게 되는 우연 발견은 추적 실패다. 분리가 일어나면(사용자가 먼저 분리를 지시했어도) 항상 연결고리를 채운다: ① 새 `task.md`에 `parent:` ② 새 `context.md`에 부모의 authoritative 산출물·log 핵심구간을 '필독 입력'으로 경로만(inline 금지) 명시 ③ 메모리 인덱스를 쓰는 환경이면 거기에 부모↔자식 포인터 1줄. 확인 절차는 사용자가 분리를 요청했으면 면제되나 ①~③ 연결고리는 면제 안 됨. 예외: 기존 작업과 독립된 신규 작업이라고 명시한 경우만 정상 라이프사이클.
 
 **3단계 — 에러 후 진행**:
 

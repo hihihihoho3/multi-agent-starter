@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """MultiAgent 시스템 생성기 — 결정적(deterministic) 스캐폴더.
 
-flavor 템플릿(dual 기본, claude | codex | antigravity 선택 가능)을 대상 폴더에 복사한다.
+flavor 템플릿(claude | codex | antigravity | dual)을 대상 폴더에 복사한다.
 - 결정적: 번들된 템플릿 파일을 그대로 복사. LLM 자유작문 없음 → 불변식 보장.
 - 안전: 기존 tasks/·_local/ 사용자 데이터를 절대 지우지 않음(update 모드 보존).
+  지침파일(CLAUDE.md/AGENTS.md)은 덮어쓰기 전 .multiagent-bak 백업 + loadout store 블록 재부착.
 - 호스트 독립: 순수 파이썬. plugin/skill/ZIP은 이 스크립트를 부르는 얇은 front door일 뿐.
 
 사용:
-    python3 init.py                         # 기본 dual 설치
-    python3 init.py --interactive           # 대화형(메뉴)
+    python3 init.py                         # 대화형(메뉴)
     python3 init.py --flavor codex --target ~/work/my-system --yes
     python3 init.py --flavor claude --target . --dry-run
 """
 from __future__ import annotations
 
 import argparse
-import os
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -27,19 +28,31 @@ FLAVORS = ("claude", "codex", "antigravity", "dual")
 # 사용자 데이터 디렉토리 — 내용물은 절대 덮어쓰거나 지우지 않는다(.gitkeep만 보장).
 PRESERVE_DIRS = ("tasks", "_local")
 
+# flavor별 지침파일(에이전트가 자동 로드) — validate.py FLAVOR['instruction']과 일치해야.
+INSTRUCTION_FILES = {
+    "claude": ("CLAUDE.md",),
+    "codex": ("AGENTS.md",),
+    "antigravity": ("AGENTS.md",),
+    "dual": ("CLAUDE.md", "AGENTS.md"),
+}
+# loadout store(github.com/netwaif/loadout)가 지침파일에 심는 조각 블록 — update 시 보존 대상.
+STORE_BLOCK_RE = re.compile(r"<!-- store:([\w-]+):start -->.*?<!-- store:\1:end -->", re.S)
+# knot·요금가드 설치는 v3.0.0부터 loadout 카탈로그 담당(github.com/netwaif/loadout).
+# knot 자산(knot_block.md·knot-vault/)과 validate C10(사후 검증)은 존치. knot 능동 스킬은 v3.1.0부터 netwaif/knot 자체 플러그인이 배포.
+# 요금가드는 v3.2.0부터 자산(구 guard/)·사후검증(구 C12)까지 전부 loadout guard 품목 소관 — 이 저장소에 가드 파일 없음.
+
 
 def available_flavors() -> list[str]:
     return [f for f in FLAVORS if (TEMPLATES_DIR / f).is_dir()]
 
 
-def choose_flavor(arg: str | None, flavors: list[str], interactive: bool = False) -> str:
+def choose_flavor(arg: str | None, flavors: list[str], interactive: bool) -> str:
     if arg:
         if arg not in flavors:
             sys.exit(f"[error] unknown flavor '{arg}'. available: {', '.join(flavors)}")
         return arg
     if not interactive:
-        default = "dual" if "dual" in flavors else flavors[0]
-        return default
+        return "dual" if "dual" in flavors else flavors[0]
     print("어떤 멀티에이전트 시스템을 구성할까요?")
     for i, f in enumerate(flavors, 1):
         print(f"  {i}. {f}")
@@ -89,103 +102,72 @@ def copy_template(template_dir: Path, target: Path, dry: bool) -> list[Path]:
     return written
 
 
+def preserve_instruction(target: Path, name: str, old_text: str, dry: bool) -> int:
+    """update 모드에서 기존 지침파일 보호: 덮어쓰기 전 원문을 .multiagent-bak으로 백업하고,
+    loadout store 블록을 새 지침파일 끝에 재부착한다. 반환값 = 재부착한 블록 수."""
+    instr = target / name
+    if not dry:
+        (target / (name + ".multiagent-bak")).write_text(
+            old_text, encoding="utf-8")
+    new_text = instr.read_text(encoding="utf-8") if instr.is_file() else ""
+    blocks = [m.group(0) for m in STORE_BLOCK_RE.finditer(old_text)
+              if m.group(0) not in new_text]
+    if blocks and not dry:
+        instr.write_text(new_text.rstrip("\n") + "\n\n" + "\n\n".join(blocks) + "\n",
+                         encoding="utf-8")
+    return len(blocks)
 
 
-POWERSHELL_PROFILE_MARKER_START = "# >>> multi-agent-starter Git Bash PATH fix >>>"
-POWERSHELL_PROFILE_MARKER_END = "# <<< multi-agent-starter Git Bash PATH fix <<<"
+def drop_codex_mcp(target: Path, dry: bool) -> bool:
+    """update 모드: 옛 설치본 .mcp.json의 codex mcp-server 등록 제거(D15 — codex-cli 0.154.0+엔
+    `codex mcp-server`가 없어 세션 시작 실패 알림만 남는다). 원본은 .mcp.json.multiagent-bak 백업.
+    다른 서버는 그대로 두고, codex만 있던 파일이면 삭제. 반환값 = 제거했는지."""
+    mcp = target / ".mcp.json"
+    if not mcp.is_file():
+        return False
+    raw = mcp.read_text(encoding="utf-8")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return False  # 사용자 파일이 깨져 있으면 손대지 않음
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    codex = servers.get("codex") if isinstance(servers, dict) else None
+    if not (isinstance(codex, dict) and "mcp-server" in (codex.get("args") or [])):
+        return False
+    if not dry:
+        (target / ".mcp.json.multiagent-bak").write_text(raw, encoding="utf-8")
+        del servers["codex"]
+        if not servers and set(data) == {"mcpServers"}:
+            mcp.unlink()
+        else:
+            mcp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
-def _windows_git_bin() -> Path | None:
-    """Return the standard Git Bash bin directory on Windows, if installed."""
-    candidates: list[Path] = []
-    for env_name in ("ProgramFiles", "ProgramFiles(x86)"):
-        base = os.environ.get(env_name)
-        if base:
-            candidates.append(Path(base) / "Git" / "bin")
-    for cand in candidates:
-        if (cand / "bash.exe").exists():
-            return cand
-    return None
-
-
-def _powershell_profile_path() -> Path:
-    user = Path(os.environ.get("USERPROFILE", str(Path.home())))
-    return user / "Documents" / "PowerShell" / "profile.ps1"
-
-
-def ensure_windows_gitbash_path(dry: bool) -> None:
-    """On Windows, make future PowerShell sessions resolve `bash` to Git Bash.
-
-    Windows often exposes C:\\Windows\\System32\\bash.exe (WSL launcher) before
-    Git Bash. The MAT dispatcher is a bash script that expects the Git Bash/MSYS
-    environment where winget-installed jq and agy capture behave correctly. This
-    idempotently prepends Git Bash to the user's PowerShell profile and also
-    updates the current process PATH for any post-install checks.
-    """
-    if os.name != "nt":
-        return
-
-    git_bin = _windows_git_bin()
-    if git_bin is None:
-        print("  [host-fix] Windows: Git Bash not found; install Git for Windows if call_worker.sh cannot find jq.")
-        return
-
-    git_bin_s = str(git_bin)
-    path_parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
-    if not path_parts or path_parts[0].lower() != git_bin_s.lower():
-        os.environ["PATH"] = git_bin_s + os.pathsep + os.environ.get("PATH", "")
-        print(f"  [host-fix] current PATH prepended: {git_bin_s}")
-
-    profile = _powershell_profile_path()
-    block = f"""
-{POWERSHELL_PROFILE_MARKER_START}
-# Ensure `bash` resolves to Git Bash before the Windows WSL stub so MAT call_worker.sh can run jq.
-# Resolve dynamically at shell startup; do not bake in the installer machine's absolute path.
-$gitBinCandidates = @()
-if ($env:ProgramFiles) {{ $gitBinCandidates += (Join-Path (Join-Path $env:ProgramFiles 'Git') 'bin') }}
-if (${{env:ProgramFiles(x86)}}) {{ $gitBinCandidates += (Join-Path (Join-Path ${{env:ProgramFiles(x86)}} 'Git') 'bin') }}
-$gitBinForMat = $gitBinCandidates | Where-Object {{ Test-Path (Join-Path $_ 'bash.exe') }} | Select-Object -First 1
-if ($gitBinForMat) {{
-    $pathParts = $env:Path -split ';' | Where-Object {{ $_ }}
-    if ($pathParts.Count -eq 0 -or $pathParts[0] -ne $gitBinForMat) {{
-        $env:Path = $gitBinForMat + ';' + ($pathParts -join ';')
-    }}
-}}
-{POWERSHELL_PROFILE_MARKER_END}
-"""
-    existing = ""
-    if profile.exists():
-        existing = profile.read_text(encoding="utf-8-sig", errors="replace")
-    if POWERSHELL_PROFILE_MARKER_START in existing:
-        print(f"  [host-fix] PowerShell profile already contains Git Bash PATH fix: {profile}")
-        return
-    if dry:
-        print(f"  [dry-run] PowerShell profile Git Bash PATH fix would be added: {profile}")
-        return
-    profile.parent.mkdir(parents=True, exist_ok=True)
-    with profile.open("a", encoding="utf-8") as f:
-        if existing and not existing.endswith(("\n", "\r")):
-            f.write("\n")
-        f.write(block)
-    print(f"  [host-fix] PowerShell profile updated for Git Bash PATH: {profile}")
+def in_git_repo(path: Path) -> bool:
+    try:
+        return subprocess.run(["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+                              capture_output=True).returncode == 0
+    except OSError:  # git 미설치
+        return False
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="MultiAgent 시스템 생성기 (결정적 스캐폴더)")
-    ap.add_argument("--flavor", choices=FLAVORS, help="claude | codex | antigravity | dual (생략 시 dual)")
+    ap.add_argument("--flavor", choices=FLAVORS, help="claude | codex | antigravity | dual (기본 dual)")
+    ap.add_argument("--interactive", action="store_true", help="flavor 선택 메뉴 표시")
+    ap.add_argument("--skip-host-fixes", action="store_true", help="Windows Git Bash 안내 생략")
     ap.add_argument("--target", help="설치 대상 폴더 (생략 시 질문)")
-    ap.add_argument("--interactive", action="store_true", help="flavor 메뉴를 표시해 직접 선택")
     ap.add_argument("--yes", action="store_true", help="확인 프롬프트 생략")
     ap.add_argument("--no-validate", action="store_true", help="설치 후 validate 건너뜀")
     ap.add_argument("--dry-run", action="store_true", help="실제 쓰지 않고 미리보기")
-    ap.add_argument("--skip-host-fixes", action="store_true", help="Windows Git Bash PATH 같은 호스트 보정 생략")
     args = ap.parse_args()
 
     flavors = available_flavors()
     if not flavors:
         sys.exit(f"[error] 템플릿이 없습니다: {TEMPLATES_DIR}")
 
-    flavor = choose_flavor(args.flavor, flavors, interactive=args.interactive)
+    flavor = choose_flavor(args.flavor, flavors, args.interactive or (not args.yes and sys.stdin.isatty()))
     template_dir = TEMPLATES_DIR / flavor
     target = choose_target(args.target, flavor)
     guard_target(target, template_dir)
@@ -194,7 +176,8 @@ def main() -> None:
     print()
     print(f"  flavor : {flavor}")
     print(f"  target : {target}")
-    print(f"  mode   : {mode}  (update=시스템 파일만 갱신, tasks/·_local/ 사용자 데이터 보존)")
+    print(f"  mode   : {mode}  (update=시스템 파일만 갱신, tasks/·_local/ 보존, "
+          f"지침파일은 백업 후 store 블록 재부착)")
     if args.dry_run:
         print("  [dry-run] 실제 변경 없음")
 
@@ -202,12 +185,22 @@ def main() -> None:
         if input("\n진행할까요? [y/N]: ").strip().lower() not in ("y", "yes"):
             sys.exit("취소됨")
 
-    if not args.skip_host_fixes:
-        ensure_windows_gitbash_path(dry=args.dry_run)
+    old_instructions = {
+        name: (target / name).read_text(encoding="utf-8")
+        for name in INSTRUCTION_FILES[flavor] if (target / name).is_file()
+    }
 
     written = copy_template(template_dir, target, dry=args.dry_run)
     prefix = "(dry) " if args.dry_run else ""
     print(f"\n  {prefix}{len(written)}개 파일 {'복사 예정' if args.dry_run else '복사 완료'}.")
+
+    for name, old_text in old_instructions.items():
+        kept = preserve_instruction(target, name, old_text, dry=args.dry_run)
+        print(f"  {prefix}기존 {name} 백업: {name}.multiagent-bak (store 블록 {kept}개 재부착)")
+
+    if flavor in ("claude", "dual") and drop_codex_mcp(target, dry=args.dry_run):
+        print(f"  {prefix}옛 .mcp.json의 codex mcp-server 등록 제거(codex exec 기본 — "
+              f"원본 .mcp.json.multiagent-bak)")
 
     validate = SCRIPT_DIR / "validate.py"
     if not args.no_validate and not args.dry_run and validate.exists():
@@ -218,7 +211,13 @@ def main() -> None:
         if rc != 0:
             sys.exit(f"[warn] validate가 문제를 보고했습니다 (exit {rc})")
 
-    print(f"\n  완료. 다음: cd {target} 후 해당 도구({flavor}) 실행.")
+    if flavor in ("claude", "antigravity", "dual") and not args.dry_run and not in_git_repo(target):
+        print(f"\n  [안내] 코덱스 워커(codex exec)는 git 저장소 안에서만 돈다 — "
+              f"먼저: cd {target} && git init")
+    if sys.platform == "win32" and not args.skip_host_fixes:
+        print("\n  [안내] Windows CLI 워커는 Git Bash에서 실행한다. 사용자 PATH/프로필은 변경하지 않는다.")
+    host = "claude 또는 codex" if flavor == "dual" else flavor
+    print(f"\n  완료. 다음: cd {target} 후 해당 도구({host}) 실행.")
 
 
 if __name__ == "__main__":

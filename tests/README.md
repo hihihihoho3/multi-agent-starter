@@ -22,12 +22,15 @@ bash   tests/dispatcher/test_fallback.sh
 
 | 파일 | 커버 | 비고 |
 |------|------|------|
-| `test_generate.py` | 3 flavor 생성 → validate 전부 PASS (L1/A2) | validate 체크 개수는 하드코딩 안 함(F4 등으로 늘어도 안 깨짐) |
-| `test_update_preserve.py` | update 모드 `tasks/`·`_local/` 보존 (S9) | 순수 파일시스템 |
+| `test_generate.py` | 4 flavor 생성 → validate 전부 PASS (L1/A2), 호출 모델 강제 없음 | 순수 파일시스템 |
+| `test_update_preserve.py` | Claude·dual 업데이트 시 사용자 데이터, 지침 블록, 다른 MCP 서버 보존 (S9) | 순수 파일시스템 |
 | `dispatcher/_lib.sh` | 공용 assert·가짜 bin·디스패처 호출 헬퍼 | |
 | `dispatcher/test_fallback.sh` | primary 실패 → fallback (S5) | 가짜 `agy`(exit1)+`claude`(exit0) |
 | `dispatcher/test_timeout.sh` | timeout → 124 (S6) | 가짜 `agy` sleep |
 | `dispatcher/test_guards.sh` | usage/`..`/role/allowlist 차단 (A6) | |
+| `dispatcher/test_codex_exec.sh` | codex exec 계약(인자·stdin·cwd=tasks/<task>/·외부 쓰기 target_repo)·`--out` 요약·진행 표시 (D15) | 실제 `_shared/backends.json` 사용, 가짜 `codex` |
+| `dispatcher/test_dual.sh` | Claude/Codex 워커풀 선택과 다른 호스트 워커 거부 | 실제 dual 레지스트리, 가짜 CLI |
+| `dispatcher/test_windows_dispatch.sh` | Windows 인자 전달, PTY stdin 유지, ANSI 정리 | 모의 실행. Git Bash에서는 Windows jq 인자 처리도 검증 |
 
 ## 자동화되지 않는 것 (수동 — `docs/ACCEPTANCE.md` 참조)
 

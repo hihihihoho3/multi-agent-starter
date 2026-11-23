@@ -42,12 +42,29 @@ claude-main이 "내부 추론"과 같은 모델이라도 별도 호출이므로 
 workers_approved:
   - worker: claude-main
     approved_at: <YYYY-MM-DD>      # 승인 당시 날짜로 교체
-    purpose: 메인 코드 구현 및 디버깅
+    purpose: 설계·아키텍처 초안 (strategist)
+    approved_by: user
+  - worker: codex-main
+    approved_at: <YYYY-MM-DD>
+    purpose: 설계 기반 대규모 구현·테스트 (engineer)
     approved_by: user
   - worker: codex-critic
     approved_at: <YYYY-MM-DD>
-    purpose: claude-main 산출물 리뷰·비평
+    purpose: 산출물 리뷰·비평 (reviewer)
     approved_by: user
 ```
+
+외부 repo 쓰기 승인은 항목에 `target_repo`·`write_scope`를 **brief와 같은 값으로** 함께 기록한다 (`gate.sh` G5가 정확 일치를 검사 — 값이 바뀌면 재승인):
+
+```yaml
+  - worker: codex-main
+    approved_at: <YYYY-MM-DD>
+    purpose: 구현 (engineer) — 외부 repo 쓰기
+    approved_by: user
+    target_repo: /absolute/path/to/repo
+    write_scope: "src/**, tests/**"
+```
+
+`log.md`의 `[APPROVAL]` 줄에도 같은 worker와 `write_scope` 값을 함께 적는다 (예: `[APPROVAL] codex-main 외부 쓰기 승인 write_scope="src/**, tests/**"`).
 
 날짜 명령어: `date +%Y-%m-%d`
